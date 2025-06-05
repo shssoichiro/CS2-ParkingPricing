@@ -38,9 +38,7 @@ namespace ParkingPricing
         [SettingsUISection(ParkingSection, LotGroup)]
         public bool enable_for_lot { get; set; }
 
-        [SettingsUISlider(min = 10, max = 90, step = 1, scalarMultiplier = 1, unit = Unit.kPercentage)]
-        [SettingsUISection(ParkingSection, LotGroup)]
-        [SettingsUIDisableByConditionAttribute(typeof(Setting), nameof(enable_for_lot), true)]
+        [SettingsUIHidden()]
         public int target_occupancy_lot { get; set; }
 
         [SettingsUISlider(min = 0, max = 50, step = 1, scalarMultiplier = 1, unit = Unit.kInteger)]
@@ -61,9 +59,7 @@ namespace ParkingPricing
         [SettingsUISection(ParkingSection, StreetGroup)]
         public bool enable_for_street { get; set; }
 
-        [SettingsUISlider(min = 10, max = 90, step = 1, scalarMultiplier = 1, unit = Unit.kPercentage)]
-        [SettingsUISection(ParkingSection, StreetGroup)]
-        [SettingsUIDisableByConditionAttribute(typeof(Setting), nameof(enable_for_street), true)]
+        [SettingsUIHidden()]
         public int target_occupancy_street { get; set; }
 
         [SettingsUISlider(min = 0, max = 50, step = 1, scalarMultiplier = 1, unit = Unit.kInteger)]

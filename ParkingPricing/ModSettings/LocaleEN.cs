@@ -22,8 +22,6 @@ namespace ParkingPricing
 
                 { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.enable_for_lot)), "Enable Parking Building Dynamic Pricing" },
                 { m_Setting.GetOptionDescLocaleID(nameof(ModSettings.enable_for_lot)), "Whether to have this mod update the prices of parking lots and buildings."},
-                { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.target_occupancy_lot)), "Target Occupancy" },
-                { m_Setting.GetOptionDescLocaleID(nameof(ModSettings.target_occupancy_lot)), "Desired target percentage of filled parking spots."},
                 { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.standard_price_lot)), "Standard Parking Price" },
                 { m_Setting.GetOptionDescLocaleID(nameof(ModSettings.standard_price_lot)), "Base price for parking when the occupancy is at the target."},
                 { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.max_price_increase_lot)), "Max. Price Increase" },
@@ -33,8 +31,6 @@ namespace ParkingPricing
 
                 { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.enable_for_street)), "Enable Street Parking Dynamic Pricing" },
                 { m_Setting.GetOptionDescLocaleID(nameof(ModSettings.enable_for_street)), "Whether to have this mod update the prices of street parking."},
-                { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.target_occupancy_street)), "Target Occupancy" },
-                { m_Setting.GetOptionDescLocaleID(nameof(ModSettings.target_occupancy_street)), "Desired target percentage of filled parking spots."},
                 { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.standard_price_street)), "Standard Parking Price" },
                 { m_Setting.GetOptionDescLocaleID(nameof(ModSettings.standard_price_street)), "Base price for parking when the occupancy is at the target."},
                 { m_Setting.GetOptionLabelLocaleID(nameof(ModSettings.max_price_increase_street)), "Max. Price Increase" },
