@@ -1,7 +1,10 @@
 using System;
+using System.Linq;
 using Colossal.Serialization.Entities;
 using Game;
+using Game.Areas;
 using Game.Net;
+using Game.Policies;
 using Game.Prefabs;
 using Unity.Collections;
 using Unity.Entities;
@@ -10,8 +13,11 @@ namespace ParkingPricing
 {
     public partial class ParkingPricingSystem : GameSystemBase
     {
-        private EntityQuery _query;
+        private EntityQuery policyQuery;
+        private EntityQuery utilizationQuery;
         private EntityQuery m_ConfigQuery;
+        private ComponentTypeHandle<District> m_DistrictType;
+        private BufferTypeHandle<Policy> m_PolicyType;
 
         protected override void OnCreate()
         {
@@ -49,17 +55,26 @@ namespace ParkingPricing
 
         private void UpdateStreetParking()
         {
-            _query = GetEntityQuery(new EntityQueryDesc()
-            {
-                All = new[] {
-                    ComponentType.ReadWrite<Game.Net.ParkingLane>(),
-                    ComponentType.ReadWrite<Game.Areas.District>(),
-                }
-            });
-            RequireForUpdate(_query);
+            // DEV NOTES:
+            // Each District has an array of `Game.Policies.Policy` but it seems to only return the active ones.
+            // `m_Adjustment` is the parking fee.
+            // Can we add a new one of these for the parking fee?
+            // `Game.Prefabs.PrefabRef` seems to be how we access `Game.Prefabs.DistrictData`.
+            // We probably need to do an additional query to get the utilization data.
+            policyQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<Game.Areas.District>()
+                .Build(this);
+            RequireForUpdate(policyQuery);
 
-            var results = _query.ToEntityArray(Allocator.Temp);
-            LogUtil.Info($"Updating street parking: {results.Length} results");
+            utilizationQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<Game.Net.ParkingLane>()
+                .WithAll<Game.Common.Owner>()
+                .Build(this);
+
+            var results = policyQuery.ToArchetypeChunkArray(Allocator.Temp);
+            LogUtil.Info($"Updating street parking: {results.Length} districts");
+
+            var parkingResults = utilizationQuery.ToEntityArray(Allocator.Temp);
 
             int basePrice = Mod.m_Setting.standard_price_lot;
             double targetOcc = Mod.m_Setting.target_occupancy_lot / 100.0;
@@ -68,13 +83,24 @@ namespace ParkingPricing
             int maxPrice = calcMaxPrice(basePrice, maxIncreasePct);
             int minPrice = calcMinPrice(basePrice, maxDecreasePct);
 
-            foreach (var result in results)
+            foreach (var chunk in results)
             {
-                Game.Net.ParkingLane parkingLane;
-                Game.Areas.District district;
+                // Game.Areas.District district;
+                NativeArray<District> nativeArray = chunk.GetNativeArray(ref m_DistrictType);
+                BufferAccessor<Policy> bufferAccessor = chunk.GetBufferAccessor(ref m_PolicyType);
+                for (int i = 0; i < nativeArray.Length; i++)
+                {
+                    // We need to go from what could be either:
+                    // ParkingLane -> Owner (road) -> Game.Areas.BorderDistrict -> District.
+                    // OR
+                    // GarageLane (which has m_VehicleCount and m_VehicleCapacity) -> Owner (which is the building)
+                    // The GarageLane counts are clearly in number of vehicles.
+                    // I have no idea what the floating point units for ParkingLane m_FreeSpace are.
 
-                parkingLane = EntityManager.GetComponentData<Game.Net.ParkingLane>(result);
-                district = EntityManager.GetComponentData<Game.Areas.District>(result);
+                    // The ParkingLane Free Space is a float.
+                    // var relevantParkingLanes = parkingResults.Where((Game.Net.ParkingLane lane) => lane.);
+                    //
+                }
 
                 int newPrice = basePrice;
                 if (maxPrice != minPrice)
@@ -90,18 +116,19 @@ namespace ParkingPricing
 
         private void UpdateBuildingParking()
         {
-            _query = GetEntityQuery(new EntityQueryDesc()
-            {
-                All = new[] {
-                    ComponentType.ReadWrite<Game.Net.GarageLane>(),
-                    ComponentType.ReadOnly<Game.Buildings.ParkingFacility>(),
-                    ComponentType.ReadOnly<Game.Buildings.Building>(),
-                }
-            });
-            RequireForUpdate(_query);
+            // DEV NOTES:
+            // Each ParkingFacility has an array of `Game.Policies.Policy`. `m_Adjustment` is the parking fee.
+            // There's also a `Game.Buildings.BuildingModifier`. I don't know if we need to update that?
+            // There's a `Game.Vehicles.GuestVehicle` array. Is this the parked vehicles? Seems like it's always empty so maybe not?
+            // This also has a `Game.Prefabs.PrefabRef`. That includes `Game.Prefabs.ParkingFacilityData` which has the capacity.
+            // We probably need to do an additional query to get the utilization data.
+            policyQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<Game.Buildings.ParkingFacility>()
+                .Build(this);
+            RequireForUpdate(policyQuery);
 
-            var results = _query.ToEntityArray(Allocator.Temp);
-            LogUtil.Info($"Updating street parking: {results.Length} results");
+            var results = policyQuery.ToEntityArray(Allocator.Temp);
+            LogUtil.Info($"Updating building parking: {results.Length} results");
 
             int basePrice = Mod.m_Setting.standard_price_lot;
             double targetOcc = Mod.m_Setting.target_occupancy_lot / 100.0;
@@ -112,13 +139,16 @@ namespace ParkingPricing
 
             foreach (var result in results)
             {
-                Game.Net.GarageLane garageLane;
+                // Game.Net.GarageLane garageLane;
                 Game.Buildings.ParkingFacility parkingFacility;
-                Game.Buildings.Building building;
+                // Game.Policies.Policy[] policy;
 
-                garageLane = EntityManager.GetComponentData<Game.Net.GarageLane>(result);
+                // Here we need to go from ParkingLane -> Owner->Owner->Owner until we reach the building.
+
+
+                // garageLane = EntityManager.GetComponentData<Game.Net.GarageLane>(result);
                 parkingFacility = EntityManager.GetComponentData<Game.Buildings.ParkingFacility>(result);
-                building = EntityManager.GetComponentData<Game.Buildings.Building>(result);
+                // policy = EntityManager.GetComponentData<Game.Policies.Policy>(result);
 
                 int newPrice = basePrice;
                 if (maxPrice != minPrice)
