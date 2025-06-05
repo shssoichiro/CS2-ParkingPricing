@@ -18,6 +18,7 @@ namespace ParkingPricing
         private EntityQuery utilizationQuery;
         private EntityQuery garageQuery;
         private EntityQuery m_ConfigQuery;
+        private EntityQuery m_PolicyPrefabQuery;
         private ComponentTypeHandle<District> m_DistrictType;
         private ComponentTypeHandle<Game.Buildings.ParkingFacility> m_parkingFacility;
         private ComponentTypeHandle<Game.Buildings.Building> m_BuildingType;
@@ -27,10 +28,17 @@ namespace ParkingPricing
         private BufferTypeHandle<Policy> m_PolicyType;
         private EntityStorageInfoLookup m_EntityLookup;
 
+        // Cached policy prefab entities
+        private Entity m_LotParkingFeePrefab;
+        private Entity m_StreetParkingFeePrefab;
+
         protected override void OnCreate()
         {
             base.OnCreate();
             m_ConfigQuery = GetEntityQuery(ComponentType.ReadOnly<UITransportConfigurationData>());
+
+            // Initialize policy prefab query  
+            m_PolicyPrefabQuery = GetEntityQuery(ComponentType.ReadOnly<PrefabData>());
 
             // Initialize component type handles
             m_DistrictType = GetComponentTypeHandle<District>(true);
@@ -41,6 +49,10 @@ namespace ParkingPricing
             m_OwnerType = GetComponentTypeHandle<Game.Common.Owner>(true);
             m_PolicyType = GetBufferTypeHandle<Policy>(false);
             m_EntityLookup = GetEntityStorageInfoLookup();
+
+            // Initialize cached prefab entities as null
+            m_LotParkingFeePrefab = Entity.Null;
+            m_StreetParkingFeePrefab = Entity.Null;
         }
 
         public override int GetUpdateInterval(SystemUpdatePhase phase)
@@ -52,6 +64,51 @@ namespace ParkingPricing
         protected override void OnGameLoaded(Context serializationContext)
         {
             if (m_ConfigQuery.IsEmptyIgnoreFilter) return;
+
+            // Initialize policy prefabs after game loads
+            InitializePolicyPrefabs();
+        }
+
+        private void InitializePolicyPrefabs()
+        {
+            // Only initialize once
+            if (m_LotParkingFeePrefab != Entity.Null) return;
+
+            var policyPrefabs = m_PolicyPrefabQuery.ToEntityArray(Allocator.Temp);
+
+            foreach (var prefabEntity in policyPrefabs)
+            {
+                // Look for BuildingOptionData or DistrictOptionData to identify policy types
+                if (EntityManager.HasComponent<BuildingOptionData>(prefabEntity))
+                {
+                    var buildingOptionData = EntityManager.GetComponentData<BuildingOptionData>(prefabEntity);
+                    if (BuildingUtils.HasOption(buildingOptionData, BuildingOption.PaidParking))
+                    {
+                        m_LotParkingFeePrefab = prefabEntity;
+                        LogUtil.Info($"Found Lot Parking Fee prefab: {prefabEntity.Index}");
+                    }
+                }
+                else if (EntityManager.HasComponent<DistrictOptionData>(prefabEntity))
+                {
+                    var districtOptionData = EntityManager.GetComponentData<DistrictOptionData>(prefabEntity);
+                    if (AreaUtils.HasOption(districtOptionData, DistrictOption.PaidParking))
+                    {
+                        m_StreetParkingFeePrefab = prefabEntity;
+                        LogUtil.Info($"Found Street Parking Fee prefab: {prefabEntity.Index}");
+                    }
+                }
+            }
+
+            policyPrefabs.Dispose();
+
+            if (m_LotParkingFeePrefab == Entity.Null)
+            {
+                LogUtil.Warn("Could not find 'Lot Parking Fee' policy prefab");
+            }
+            if (m_StreetParkingFeePrefab == Entity.Null)
+            {
+                LogUtil.Warn("Could not find 'Roadside Parking Fee' policy prefab");
+            }
         }
 
         protected override void OnUpdate()
@@ -452,8 +509,8 @@ namespace ParkingPricing
             return new Policy
             {
                 m_Adjustment = price,
-                m_Flags = PolicyFlags.Active,
-                m_Policy = Entity.Null // TODO: Set to the correct street parking policy prefab entity
+                m_Flags = price > 0 ? PolicyFlags.Active : 0,
+                m_Policy = m_StreetParkingFeePrefab
             };
         }
 
@@ -515,8 +572,8 @@ namespace ParkingPricing
             return new Policy
             {
                 m_Adjustment = price,
-                m_Flags = PolicyFlags.Active,
-                m_Policy = Entity.Null // TODO: Set to the correct PaidParking policy prefab entity
+                m_Flags = price > 0 ? PolicyFlags.Active : 0,
+                m_Policy = m_LotParkingFeePrefab
             };
         }
 
