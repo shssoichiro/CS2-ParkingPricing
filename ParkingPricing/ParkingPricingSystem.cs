@@ -17,6 +17,7 @@ namespace ParkingPricing
         private EntityQuery utilizationQuery;
         private EntityQuery m_ConfigQuery;
         private ComponentTypeHandle<District> m_DistrictType;
+        private ComponentTypeHandle<Game.Buildings.ParkingFacility> m_parkingFacility;
         private BufferTypeHandle<Policy> m_PolicyType;
 
         protected override void OnCreate()
@@ -70,6 +71,7 @@ namespace ParkingPricing
                 .WithAll<Game.Net.ParkingLane>()
                 .WithAll<Game.Common.Owner>()
                 .Build(this);
+            RequireForUpdate(utilizationQuery);
 
             var results = policyQuery.ToArchetypeChunkArray(Allocator.Temp);
             LogUtil.Info($"Updating street parking: {results.Length} districts");
@@ -127,8 +129,15 @@ namespace ParkingPricing
                 .Build(this);
             RequireForUpdate(policyQuery);
 
-            var results = policyQuery.ToEntityArray(Allocator.Temp);
-            LogUtil.Info($"Updating building parking: {results.Length} results");
+            utilizationQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<Game.Net.ParkingLane>()
+                .WithAll<Game.Common.Owner>()
+                .Build(this);
+            RequireForUpdate(utilizationQuery);
+
+            var results = policyQuery.ToArchetypeChunkArray(Allocator.Temp);
+            var parkingResults = utilizationQuery.ToEntityArray(Allocator.Temp);
+            LogUtil.Info($"Updating building parking: {results.Length} lots");
 
             int basePrice = Mod.m_Setting.standard_price_lot;
             double targetOcc = Mod.m_Setting.target_occupancy_lot / 100.0;
@@ -137,17 +146,12 @@ namespace ParkingPricing
             int maxPrice = calcMaxPrice(basePrice, maxIncreasePct);
             int minPrice = calcMinPrice(basePrice, maxDecreasePct);
 
-            foreach (var result in results)
+            foreach (var chunk in results)
             {
-                // Game.Net.GarageLane garageLane;
-                Game.Buildings.ParkingFacility parkingFacility;
-                // Game.Policies.Policy[] policy;
-
                 // Here we need to go from ParkingLane -> Owner->Owner->Owner until we reach the building.
 
-
-                // garageLane = EntityManager.GetComponentData<Game.Net.GarageLane>(result);
-                parkingFacility = EntityManager.GetComponentData<Game.Buildings.ParkingFacility>(result);
+                NativeArray<Game.Buildings.ParkingFacility> nativeArray = chunk.GetNativeArray(ref m_parkingFacility);
+                BufferAccessor<Policy> bufferAccessor = chunk.GetBufferAccessor(ref m_PolicyType);
                 // policy = EntityManager.GetComponentData<Game.Policies.Policy>(result);
 
                 int newPrice = basePrice;
