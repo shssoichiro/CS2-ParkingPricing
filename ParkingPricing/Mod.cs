@@ -7,7 +7,7 @@ namespace ParkingPricing
 {
     public class Mod : IMod
     {
-        private ModSettings m_Setting;
+        public static ModSettings m_Setting;
 
         public void OnLoad(UpdateSystem updateSystem)
         {
@@ -20,8 +20,9 @@ namespace ParkingPricing
             m_Setting.RegisterInOptionsUI();
             GameManager.instance.localizationManager.AddSource("en-US", new LocaleEN(m_Setting));
 
-
             AssetDatabase.global.LoadSettings(nameof(ParkingPricing), m_Setting, new ModSettings(this));
+
+            updateSystem.UpdateAt<ParkingPricingSystem>(SystemUpdatePhase.GameSimulation);
         }
 
         public void OnDispose()
