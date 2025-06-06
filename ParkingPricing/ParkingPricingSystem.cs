@@ -351,6 +351,7 @@ namespace ParkingPricing
                     }
                 }
             }
+            LogUtil.Debug($"Found parking lane: SlotInterval={parkingLaneData.m_SlotInterval:P2}, SlotCapacity={slotCapacity}, ParkedCars={parkedCars}");
         }
 
         private double CalculateDistrictUtilization(Entity districtEntity, NativeArray<Entity> parkingLanes)

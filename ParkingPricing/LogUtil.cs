@@ -14,6 +14,23 @@ namespace ParkingPricing
         // Create a new log just for this mod.
         // This mod will have its own log file in the game's Logs folder.
         private static readonly ILog _log = LogManager.GetLogger(ModAssemblyInfo.Name);
+        // Change this for debugging. Leave it false most of the time.
+        private static readonly bool PRINT_DEBUG = false;
+
+        /// <summary>
+        /// Log a debug message.
+        /// </summary>
+        public static void Debug(string message)
+        {
+            _log.Debug(message);
+
+            if (PRINT_DEBUG)
+            {
+                // Info messages are not written to the BepInEx console by the Colossal logger, so write the message explicitly.
+                // Include the mod assembly name and message level to make info messages appear similar to other messages.
+                Console.WriteLine($"[{ModAssemblyInfo.Name}] [DEBUG]  {message}");
+            }
+        }
 
         /// <summary>
         /// Log an info message.
