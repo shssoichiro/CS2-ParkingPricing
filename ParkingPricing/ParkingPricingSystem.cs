@@ -314,33 +314,7 @@ namespace ParkingPricing
                         continue;
                     }
 
-                    // Get parking slot count using game's method
-                    Entity prefab = EntityManager.GetComponentData<PrefabRef>(subLane).m_Prefab;
-                    Curve curve = EntityManager.GetComponentData<Curve>(subLane);
-                    var parkingLaneData = EntityManager.GetComponentData<ParkingLaneData>(prefab);
-
-                    if (parkingLaneData.m_SlotInterval != 0f)
-                    {
-                        int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
-                        slotCapacity += parkingSlotCount;
-                    }
-                    else
-                    {
-                        slotCapacity = -1000000; // Game's way of handling invalid slots
-                    }
-
-                    // Count parked cars in this lane
-                    if (EntityManager.HasBuffer<LaneObject>(subLane))
-                    {
-                        var laneObjects = EntityManager.GetBuffer<LaneObject>(subLane, true);
-                        for (int j = 0; j < laneObjects.Length; j++)
-                        {
-                            if (EntityManager.HasComponent<ParkedCar>(laneObjects[j].m_LaneObject))
-                            {
-                                parkedCars++;
-                            }
-                        }
-                    }
+                    GetParkingLaneCounts(subLane, parkingLane, ref slotCapacity, ref parkedCars);
                 }
                 // Handle GarageLane
                 else if (EntityManager.HasComponent<Game.Net.GarageLane>(subLane))
@@ -348,6 +322,37 @@ namespace ParkingPricing
                     var garageLane = EntityManager.GetComponentData<Game.Net.GarageLane>(subLane);
                     slotCapacity += garageLane.m_VehicleCapacity;
                     parkedCars += garageLane.m_VehicleCount;
+                }
+            }
+        }
+
+        private void GetParkingLaneCounts(Entity subLane, Game.Net.ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars)
+        {
+            // Get parking slot count using game's method
+            Entity prefab = EntityManager.GetComponentData<PrefabRef>(subLane).m_Prefab;
+            Curve curve = EntityManager.GetComponentData<Curve>(subLane);
+            var parkingLaneData = EntityManager.GetComponentData<ParkingLaneData>(prefab);
+
+            if (parkingLaneData.m_SlotInterval != 0f)
+            {
+                int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
+                slotCapacity += parkingSlotCount;
+            }
+            else
+            {
+                slotCapacity = -1000000; // Game's way of handling invalid slots
+            }
+
+            // Count parked cars in this lane
+            if (EntityManager.HasBuffer<LaneObject>(subLane))
+            {
+                var laneObjects = EntityManager.GetBuffer<LaneObject>(subLane, true);
+                for (int j = 0; j < laneObjects.Length; j++)
+                {
+                    if (EntityManager.HasComponent<ParkedCar>(laneObjects[j].m_LaneObject))
+                    {
+                        parkedCars++;
+                    }
                 }
             }
         }
@@ -387,8 +392,8 @@ namespace ParkingPricing
                         if (leftMatch || rightMatch)
                         {
                             // Calculate capacity and occupancy for this lane
-                            double laneCapacity = 0;
-                            double laneOccupied = 0;
+                            int laneCapacity = 0;
+                            int laneOccupied = 0;
 
                             // Count parked cars in this lane
                             if (EntityManager.HasBuffer<LaneObject>(laneEntity))
@@ -404,32 +409,7 @@ namespace ParkingPricing
                             }
 
                             // Get parking slot count using game's method
-                            Entity prefab = EntityManager.GetComponentData<PrefabRef>(laneEntity).m_Prefab;
-                            Curve curve = EntityManager.GetComponentData<Curve>(laneEntity);
-                            var parkingLaneData = EntityManager.GetComponentData<ParkingLaneData>(prefab);
-
-                            if (parkingLaneData.m_SlotInterval != 0f)
-                            {
-                                int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
-                                laneCapacity += parkingSlotCount;
-                            }
-                            else
-                            {
-                                laneCapacity = -1000000; // Game's way of handling invalid slots
-                            }
-
-                            // Count parked cars in this lane
-                            if (EntityManager.HasBuffer<LaneObject>(laneEntity))
-                            {
-                                var laneObjects = EntityManager.GetBuffer<LaneObject>(laneEntity, true);
-                                for (int j = 0; j < laneObjects.Length; j++)
-                                {
-                                    if (EntityManager.HasComponent<ParkedCar>(laneObjects[j].m_LaneObject))
-                                    {
-                                        laneOccupied++;
-                                    }
-                                }
-                            }
+                            GetParkingLaneCounts(laneEntity, parkingLane, ref laneCapacity, ref laneOccupied);
 
                             // Determine weight based on district ownership
                             double weight = 1.0;
