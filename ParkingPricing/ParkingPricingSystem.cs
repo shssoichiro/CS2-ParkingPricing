@@ -417,49 +417,30 @@ namespace ParkingPricing
 
         private void ApplyDistrictParkingPolicy(Entity districtEntity, int newPrice)
         {
-            Policy policy;
-            DynamicBuffer<Policy> buffer;
-            int index;
-            if (!TryGetPolicyForUpdate(districtEntity, m_StreetParkingFeePrefab, out policy, out buffer, out index))
+            if (!TryUpdatePolicy(districtEntity, m_StreetParkingFeePrefab, newPrice))
             {
                 LogUtil.Warn("Failed to find street parking fee policy");
+                return;
             }
 
-            // Update existing policy
-            policy.m_Adjustment = newPrice;
-            policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
-            buffer[index] = policy;
             LogUtil.Info($"Updated street parking policy for district {districtEntity.Index}: ${newPrice}");
         }
 
         private void ApplyLotParkingPolicy(Entity buildingEntity, int newPrice)
         {
-            Policy policy;
-            DynamicBuffer<Policy> buffer;
-            int index;
-            if (!TryGetPolicyForUpdate(buildingEntity, m_LotParkingFeePrefab, out policy, out buffer, out index))
+            if (!TryUpdatePolicy(buildingEntity, m_LotParkingFeePrefab, newPrice))
             {
                 LogUtil.Warn("Failed to find lot parking fee policy");
+                return;
             }
 
-            // Update existing policy
-            policy.m_Adjustment = newPrice;
-            policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
-            buffer[index] = policy;
             LogUtil.Info($"Updated parking policy for building {buildingEntity.Index}: ${newPrice}");
         }
 
         private bool TryGetPolicy(Entity entity, Entity policyType, out Policy policy)
         {
-            DynamicBuffer<Policy> buffer;
-            int index;
-            return TryGetPolicyForUpdate(entity, policyType, out policy, out buffer, out index);
-        }
-
-        private bool TryGetPolicyForUpdate(Entity entity, Entity policyType, out Policy policy, out DynamicBuffer<Policy> buffer, out int index)
-        {
-            buffer = base.EntityManager.GetBuffer<Policy>(entity);
-            for (index = 0; index < buffer.Length; index++)
+            var buffer = base.EntityManager.GetBuffer<Policy>(entity);
+            for (var index = 0; index < buffer.Length; index++)
             {
                 if (buffer[index].m_Policy == policyType)
                 {
@@ -468,6 +449,23 @@ namespace ParkingPricing
                 }
             }
             policy = default(Policy);
+            return false;
+        }
+
+        private bool TryUpdatePolicy(Entity entity, Entity policyType, int newPrice)
+        {
+            var buffer = base.EntityManager.GetBuffer<Policy>(entity);
+            for (var index = 0; index < buffer.Length; index++)
+            {
+                if (buffer[index].m_Policy == policyType)
+                {
+                    var policy = buffer[index];
+                    policy.m_Adjustment = newPrice;
+                    policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
+                    buffer[index] = policy;
+                    return true;
+                }
+            }
             return false;
         }
 
