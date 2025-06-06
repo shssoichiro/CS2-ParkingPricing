@@ -319,35 +319,6 @@ namespace ParkingPricing
             return slotCapacity > 0 ? (double)parkedCars / slotCapacity : 0.0;
         }
 
-        private void CheckParkingLanes(DynamicBuffer<Game.Net.SubLane> subLanes, ref int slotCapacity, ref int parkedCars)
-        {
-            for (int i = 0; i < subLanes.Length; i++)
-            {
-                Entity subLane = subLanes[i].m_SubLane;
-
-                // Handle ParkingLane
-                if (EntityManager.HasComponent<Game.Net.ParkingLane>(subLane))
-                {
-                    var parkingLane = EntityManager.GetComponentData<Game.Net.ParkingLane>(subLane);
-
-                    // Skip virtual lanes
-                    if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0)
-                    {
-                        continue;
-                    }
-
-                    GetParkingLaneCounts(subLane, parkingLane, ref slotCapacity, ref parkedCars);
-                }
-                // Handle GarageLane
-                else if (EntityManager.HasComponent<Game.Net.GarageLane>(subLane))
-                {
-                    var garageLane = EntityManager.GetComponentData<Game.Net.GarageLane>(subLane);
-                    slotCapacity += garageLane.m_VehicleCapacity;
-                    parkedCars += garageLane.m_VehicleCount;
-                }
-            }
-        }
-
         private void GetParkingLaneCounts(Entity subLane, Game.Net.ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars)
         {
             // Get parking slot count using game's method
