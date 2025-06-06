@@ -338,10 +338,6 @@ namespace ParkingPricing
                 int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
                 slotCapacity += parkingSlotCount;
             }
-            else
-            {
-                slotCapacity = -1000000; // Game's way of handling invalid slots
-            }
 
             // Count parked cars in this lane
             if (EntityManager.HasBuffer<LaneObject>(subLane))
@@ -359,7 +355,6 @@ namespace ParkingPricing
 
         private double CalculateDistrictUtilization(Entity districtEntity, NativeArray<Entity> parkingLanes)
         {
-            // FIXME: this function seems to always be returning 0 occupancy
             double totalCapacity = 0;
             double totalOccupied = 0;
 
@@ -395,29 +390,16 @@ namespace ParkingPricing
                             int laneCapacity = 0;
                             int laneOccupied = 0;
 
-                            // Count parked cars in this lane
-                            if (EntityManager.HasBuffer<LaneObject>(laneEntity))
-                            {
-                                var laneObjects = EntityManager.GetBuffer<LaneObject>(laneEntity, true);
-                                for (int j = 0; j < laneObjects.Length; j++)
-                                {
-                                    if (EntityManager.HasComponent<ParkedCar>(laneObjects[j].m_LaneObject))
-                                    {
-                                        laneOccupied++;
-                                    }
-                                }
-                            }
-
                             // Get parking slot count using game's method
                             GetParkingLaneCounts(laneEntity, parkingLane, ref laneCapacity, ref laneOccupied);
 
                             // Determine weight based on district ownership
-                            double weight = 1.0;
+                            double weight;
                             if (leftMatch && rightMatch)
                             {
                                 weight = 1.0; // Full capacity/occupancy if both sides belong to district
                             }
-                            else if (leftMatch || rightMatch)
+                            else
                             {
                                 weight = 0.5; // Half capacity/occupancy if only one side belongs to district
                             }
