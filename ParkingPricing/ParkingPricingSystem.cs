@@ -242,7 +242,7 @@ namespace ParkingPricing
                     LogUtil.Info($"Building {buildingEntity.Index}: Utilization = {utilization:P2}, New Price = {newPrice}");
 
                     // Apply the parking fee policy to this building
-                    ApplyParkingPolicy(buildingEntity, newPrice);
+                    ApplyLotParkingPolicy(buildingEntity, newPrice);
                 }
             }
 
@@ -456,39 +456,52 @@ namespace ParkingPricing
         private void ApplyDistrictParkingPolicy(Entity districtEntity, int newPrice)
         {
             Policy policy;
-            if (!TryGetPolicy(districtEntity, m_StreetParkingFeePrefab, out policy))
+            DynamicBuffer<Policy> buffer;
+            int index;
+            if (!TryGetPolicyForUpdate(districtEntity, m_StreetParkingFeePrefab, out policy, out buffer, out index))
             {
                 LogUtil.Warn("Failed to find street parking fee policy");
             }
 
-            // FIXME: Update existing policy
+            // Update existing policy
             policy.m_Adjustment = newPrice;
             policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
+            buffer[index] = policy;
             LogUtil.Info($"Updated street parking policy for district {districtEntity.Index}: ${newPrice}");
         }
 
-        private void ApplyParkingPolicy(Entity buildingEntity, int newPrice)
+        private void ApplyLotParkingPolicy(Entity buildingEntity, int newPrice)
         {
             Policy policy;
-            if (!TryGetPolicy(buildingEntity, m_LotParkingFeePrefab, out policy))
+            DynamicBuffer<Policy> buffer;
+            int index;
+            if (!TryGetPolicyForUpdate(buildingEntity, m_LotParkingFeePrefab, out policy, out buffer, out index))
             {
                 LogUtil.Warn("Failed to find lot parking fee policy");
             }
 
-            // FIXME: Update existing policy
+            // Update existing policy
             policy.m_Adjustment = newPrice;
             policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
+            buffer[index] = policy;
             LogUtil.Info($"Updated parking policy for building {buildingEntity.Index}: ${newPrice}");
         }
 
         private bool TryGetPolicy(Entity entity, Entity policyType, out Policy policy)
         {
-            DynamicBuffer<Policy> buffer = base.EntityManager.GetBuffer<Policy>(entity);
-            for (int i = 0; i < buffer.Length; i++)
+            DynamicBuffer<Policy> buffer;
+            int index;
+            return TryGetPolicyForUpdate(entity, policyType, out policy, out buffer, out index);
+        }
+
+        private bool TryGetPolicyForUpdate(Entity entity, Entity policyType, out Policy policy, out DynamicBuffer<Policy> buffer, out int index)
+        {
+            buffer = base.EntityManager.GetBuffer<Policy>(entity);
+            for (index = 0; index < buffer.Length; index++)
             {
-                if (buffer[i].m_Policy == policyType)
+                if (buffer[index].m_Policy == policyType)
                 {
-                    policy = buffer[i];
+                    policy = buffer[index];
                     return true;
                 }
             }
