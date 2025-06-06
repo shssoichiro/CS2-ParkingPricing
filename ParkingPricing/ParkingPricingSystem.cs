@@ -1,4 +1,5 @@
 using System;
+using Colossal.Json;
 using Colossal.Serialization.Entities;
 using Game;
 using Game.Areas;
@@ -286,11 +287,32 @@ namespace ParkingPricing
             int slotCapacity = 0;
             int parkedCars = 0;
 
-            // Check if building has SubLane buffer (more direct approach like the game uses)
-            if (EntityManager.HasBuffer<Game.Net.SubLane>(buildingEntity))
+            // Check parking lanes that belong to this building
+            foreach (Entity laneEntity in parkingLanes)
             {
-                var subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(buildingEntity, true);
-                CheckParkingLanes(subLanes, ref slotCapacity, ref parkedCars);
+                if (DoesLaneBelongToBuilding(laneEntity, buildingEntity))
+                {
+                    var parkingLane = EntityManager.GetComponentData<Game.Net.ParkingLane>(laneEntity);
+
+                    // Skip virtual lanes
+                    if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0)
+                    {
+                        continue;
+                    }
+
+                    GetParkingLaneCounts(laneEntity, parkingLane, ref slotCapacity, ref parkedCars);
+                }
+            }
+
+            // Check garage lanes that belong to this building
+            foreach (Entity laneEntity in garageLanes)
+            {
+                if (DoesLaneBelongToBuilding(laneEntity, buildingEntity))
+                {
+                    var garageLane = EntityManager.GetComponentData<Game.Net.GarageLane>(laneEntity);
+                    slotCapacity += garageLane.m_VehicleCapacity;
+                    parkedCars += garageLane.m_VehicleCount;
+                }
             }
 
             // Calculate utilization percentage
@@ -483,6 +505,29 @@ namespace ParkingPricing
         private int calcMinPrice(int basePrice, double maxDecreasePct)
         {
             return Math.Max(0, basePrice == 0 ? 0 : (int)Math.Floor(basePrice * (1.0 - maxDecreasePct)));
+        }
+
+        private bool DoesLaneBelongToBuilding(Entity laneEntity, Entity targetBuilding)
+        {
+            Entity currentEntity = laneEntity;
+            int maxDepth = 10; // Prevent infinite loops
+            int depth = 0;
+
+            while (depth < maxDepth && EntityManager.HasComponent<Game.Common.Owner>(currentEntity))
+            {
+                var owner = EntityManager.GetComponentData<Game.Common.Owner>(currentEntity);
+                currentEntity = owner.m_Owner;
+
+                // Check if current entity is a building
+                if (EntityManager.HasComponent<Game.Buildings.Building>(currentEntity))
+                {
+                    return currentEntity == targetBuilding;
+                }
+
+                depth++;
+            }
+
+            return false;
         }
     }
 }
