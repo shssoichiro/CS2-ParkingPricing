@@ -230,9 +230,8 @@ namespace ParkingPricing
                     Entity buildingEntity = buildingEntities[i];
 
                     // Only evaluate buildings that can have parking fee.
-                    var building = EntityManager.GetComponentData<Game.Buildings.Building>(buildingEntity);
-                    bool canHavePaidParking = (building.m_OptionMask & (uint)BuildingOption.PaidParking) != 0;
-                    if (!canHavePaidParking)
+                    Policy policy;
+                    if (!TryGetPolicy(buildingEntity, m_LotParkingFeePrefab, out policy))
                     {
                         continue;
                     }
@@ -355,6 +354,7 @@ namespace ParkingPricing
 
         private double CalculateDistrictUtilization(Entity districtEntity, NativeArray<Entity> parkingLanes)
         {
+            // FIXME: this function seems to always be returning 0 occupancy
             double totalCapacity = 0;
             double totalOccupied = 0;
 
@@ -455,127 +455,47 @@ namespace ParkingPricing
 
         private void ApplyDistrictParkingPolicy(Entity districtEntity, int newPrice)
         {
-            // Check if the district has a policy buffer
-            if (EntityManager.HasBuffer<Policy>(districtEntity))
+            Policy policy;
+            if (!TryGetPolicy(districtEntity, m_StreetParkingFeePrefab, out policy))
             {
-                var policyBuffer = EntityManager.GetBuffer<Policy>(districtEntity);
-
-                // Look for existing parking fee policy
-                bool policyFound = false;
-                for (int i = 0; i < policyBuffer.Length; i++)
-                {
-                    var policy = policyBuffer[i];
-
-                    // Check if this is a parking fee policy
-                    if (IsStreetParkingFeePolicy(policy))
-                    {
-                        // Update existing policy
-                        policy.m_Adjustment = newPrice;
-                        policyBuffer[i] = policy;
-                        policyFound = true;
-                        LogUtil.Info($"Updated street parking policy for district {districtEntity.Index}: ${newPrice}");
-                        break;
-                    }
-                }
-
-                // If no existing policy found, add a new one
-                if (!policyFound)
-                {
-                    // Create new street parking fee policy
-                    var newPolicy = CreateStreetParkingFeePolicy(newPrice);
-                    policyBuffer.Add(newPolicy);
-                    LogUtil.Info($"Added new street parking policy for district {districtEntity.Index}: ${newPrice}");
-                }
+                LogUtil.Warn("Failed to find street parking fee policy");
             }
-            else
-            {
-                LogUtil.Info($"District {districtEntity.Index} does not have a policy buffer");
-            }
-        }
 
-        private bool IsStreetParkingFeePolicy(Policy policy)
-        {
-            // Check if this policy has DistrictOption.PaidParking flag
-            if (EntityManager.HasComponent<DistrictOptionData>(policy.m_Policy))
-            {
-                var districtOptionData = EntityManager.GetComponentData<DistrictOptionData>(policy.m_Policy);
-                return AreaUtils.HasOption(districtOptionData, DistrictOption.PaidParking);
-            }
-            return false;
-        }
-
-        private Policy CreateStreetParkingFeePolicy(int price)
-        {
-            return new Policy
-            {
-                m_Adjustment = price,
-                m_Flags = price > 0 ? PolicyFlags.Active : 0,
-                m_Policy = m_StreetParkingFeePrefab
-            };
+            // FIXME: Update existing policy
+            policy.m_Adjustment = newPrice;
+            policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
+            LogUtil.Info($"Updated street parking policy for district {districtEntity.Index}: ${newPrice}");
         }
 
         private void ApplyParkingPolicy(Entity buildingEntity, int newPrice)
         {
-            // Check if the building has a policy buffer
-            if (EntityManager.HasBuffer<Policy>(buildingEntity))
+            Policy policy;
+            if (!TryGetPolicy(buildingEntity, m_LotParkingFeePrefab, out policy))
             {
-                var policyBuffer = EntityManager.GetBuffer<Policy>(buildingEntity);
-
-                // Look for existing parking fee policy
-                bool policyFound = false;
-                for (int i = 0; i < policyBuffer.Length; i++)
-                {
-                    var policy = policyBuffer[i];
-
-                    // Check if this is a parking fee policy (you may need to adjust this condition)
-                    // This is a placeholder - you'll need to identify the correct policy type
-                    if (IsLotParkingFeePolicy(policy))
-                    {
-                        // Update existing policy
-                        policy.m_Adjustment = newPrice;
-                        policyBuffer[i] = policy;
-                        policyFound = true;
-                        LogUtil.Info($"Updated parking policy for building {buildingEntity.Index}: ${newPrice}");
-                        break;
-                    }
-                }
-
-                // If no existing policy found, add a new one
-                if (!policyFound)
-                {
-                    // Create new parking fee policy
-                    // You'll need to implement this based on the game's policy system
-                    var newPolicy = CreateLotParkingFeePolicy(newPrice);
-                    policyBuffer.Add(newPolicy);
-                    LogUtil.Info($"Added new parking policy for building {buildingEntity.Index}: ${newPrice}");
-                }
+                LogUtil.Warn("Failed to find lot parking fee policy");
             }
-            else
-            {
-                LogUtil.Info($"Building {buildingEntity.Index} does not have a policy buffer");
-            }
+
+            // FIXME: Update existing policy
+            policy.m_Adjustment = newPrice;
+            policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
+            LogUtil.Info($"Updated parking policy for building {buildingEntity.Index}: ${newPrice}");
         }
 
-        private bool IsLotParkingFeePolicy(Policy policy)
+        private bool TryGetPolicy(Entity entity, Entity policyType, out Policy policy)
         {
-            // Check if this policy has BuildingOption.PaidParking flag
-            if (EntityManager.HasComponent<BuildingOptionData>(policy.m_Policy))
+            DynamicBuffer<Policy> buffer = base.EntityManager.GetBuffer<Policy>(entity);
+            for (int i = 0; i < buffer.Length; i++)
             {
-                var buildingOptionData = EntityManager.GetComponentData<BuildingOptionData>(policy.m_Policy);
-                return BuildingUtils.HasOption(buildingOptionData, BuildingOption.PaidParking);
+                if (buffer[i].m_Policy == policyType)
+                {
+                    policy = buffer[i];
+                    return true;
+                }
             }
+            policy = default(Policy);
             return false;
         }
 
-        private Policy CreateLotParkingFeePolicy(int price)
-        {
-            return new Policy
-            {
-                m_Adjustment = price,
-                m_Flags = price > 0 ? PolicyFlags.Active : 0,
-                m_Policy = m_LotParkingFeePrefab
-            };
-        }
 
         private int calcMaxPrice(int basePrice, double maxIncreasePct)
         {
