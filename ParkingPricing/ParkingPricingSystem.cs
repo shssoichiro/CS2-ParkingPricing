@@ -669,23 +669,13 @@ namespace ParkingPricing
 
         private void ApplyDistrictParkingPolicy(Entity districtEntity, int newPrice)
         {
-            if (!TryUpdatePolicy(districtEntity, m_StreetParkingFeePrefab, newPrice))
-            {
-                LogUtil.Warn("Failed to find street parking fee policy");
-                return;
-            }
-
+            UpdateOrAddPolicy(districtEntity, m_StreetParkingFeePrefab, newPrice);
             LogUtil.Info($"Updated street parking policy for district {districtEntity.Index}: ${newPrice}");
         }
 
         private void ApplyLotParkingPolicy(Entity buildingEntity, int newPrice)
         {
-            if (!TryUpdatePolicy(buildingEntity, m_LotParkingFeePrefab, newPrice))
-            {
-                LogUtil.Warn("Failed to find lot parking fee policy");
-                return;
-            }
-
+            UpdateOrAddPolicy(buildingEntity, m_LotParkingFeePrefab, newPrice);
             LogUtil.Info($"Updated parking policy for building {buildingEntity.Index}: ${newPrice}");
         }
 
@@ -704,21 +694,30 @@ namespace ParkingPricing
             return false;
         }
 
-        private bool TryUpdatePolicy(Entity entity, Entity policyType, int newPrice)
+        private void UpdateOrAddPolicy(Entity entity, Entity policyType, int newPrice)
         {
             var buffer = base.EntityManager.GetBuffer<Policy>(entity);
             for (var index = 0; index < buffer.Length; index++)
             {
                 if (buffer[index].m_Policy == policyType)
                 {
+                    // Update the existing policy
                     var policy = buffer[index];
                     policy.m_Adjustment = newPrice;
                     policy.m_Flags = newPrice > 0 ? PolicyFlags.Active : 0;
                     buffer[index] = policy;
-                    return true;
+                    return;
                 }
             }
-            return false;
+
+            // No existing policy, so add it as a new one
+            var newPolicy = new Policy
+            {
+                m_Adjustment = newPrice,
+                m_Flags = newPrice > 0 ? PolicyFlags.Active : 0,
+                m_Policy = policyType
+            };
+            buffer.Add(newPolicy);
         }
 
 
