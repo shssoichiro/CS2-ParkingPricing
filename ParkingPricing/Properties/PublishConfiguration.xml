@@ -21,9 +21,6 @@ Will work with any paid parking, including lots, garages, and integrated parking
 
 NOTE: Street parking must be inside a district for pricing to be adjusted,
 since we use the district policy for street parking.
-
-NOTE 2: Currently there may be a periodic lag spike caused by this mod in cities with a large number
-of parking facilities. This will be improved in a future patch.
 </LongDescription>
 
     <!-- Thumbnail. -->
@@ -42,7 +39,7 @@ of parking facilities. This will be improved in a future patch.
     <ForumLink Value="https://forum.paradoxplaza.com/forum/threads/parking-pricing.1769534/" />
 
     <!-- Version of the mod.  Copied from assembly Version. -->
-    <ModVersion Value="1.0.0" />
+    <ModVersion Value="1.0.1" />
 
     <!-- Recommended version of the base game to use the mod. -->
     <GameVersion Value="1.2.5f1" />
@@ -56,7 +53,7 @@ of parking facilities. This will be improved in a future patch.
 
     <!-- Change log.  Copied from ChangeLog.md file.  Supports minimal markdown subset. -->
     <ChangeLog>
-- Initial release
+- Refactored to avoid lag by using asynchronous jobs for computation
 </ChangeLog>
 
     <!-- External links. Supported types are discord, github, youtube, twitch, x, paypal, patreon, buymeacoffee, kofi, crowdin, gitlab, gofundme.  Can be set multiple times. -->

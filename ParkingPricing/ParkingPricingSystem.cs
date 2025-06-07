@@ -8,6 +8,7 @@ using Game.Prefabs;
 using Game.Buildings;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Jobs;
 using Game.Vehicles;
 using Game.Objects;
 
@@ -52,6 +53,14 @@ namespace ParkingPricing
         // Extracted components
         private PolicyManager m_PolicyManager;
         private UtilizationCalculator m_UtilizationCalculator;
+
+        // Job system state
+        private JobHandle m_PreviousJobHandle;
+        private bool m_JobInProgress;
+        private NativeArray<DistrictUtilizationResult> m_DistrictResults;
+        private NativeArray<BuildingUtilizationResult> m_BuildingResults;
+        private NativeArray<PricingUpdate> m_PricingUpdates;
+        private bool m_HasPendingUpdates;
 
         protected override void OnCreate()
         {
@@ -194,28 +203,211 @@ namespace ParkingPricing
                 return;
             }
 
-            LogUtil.Info("Updating parking pricing");
+            // Check if previous job is complete
+            if (m_JobInProgress)
+            {
+                if (m_PreviousJobHandle.IsCompleted)
+                {
+                    m_PreviousJobHandle.Complete();
+                    m_JobInProgress = false;
 
+                    // Apply pending updates on main thread
+                    if (m_HasPendingUpdates)
+                    {
+                        ApplyPendingUpdates();
+                        m_HasPendingUpdates = false;
+                    }
+
+                    LogUtil.Info("Async parking pricing update completed");
+                }
+                else
+                {
+                    // Job still running, skip this frame
+                    return;
+                }
+            }
+
+            // Start new async update
             try
             {
                 UpdateComponentHandles();
-
-                if (Mod.m_Setting.enable_for_street)
-                {
-                    UpdateStreetParking();
-                }
-
-                if (Mod.m_Setting.enable_for_lot)
-                {
-                    UpdateBuildingParking();
-                }
+                StartAsyncUpdate();
             }
             catch (Exception ex)
             {
                 LogUtil.Exception(ex);
             }
+        }
 
-            LogUtil.Info("Done updating parking pricing");
+        private void StartAsyncUpdate()
+        {
+            LogUtil.Info("Starting async parking pricing update");
+
+            var settings = Mod.m_Setting;
+            bool enableStreet = settings.enable_for_street;
+            bool enableLot = settings.enable_for_lot;
+
+            if (!enableStreet && !enableLot)
+                return;
+
+            // Dispose previous arrays if they exist
+            DisposeJobArrays();
+
+            // Get entities to process
+            var districtEntities = enableStreet ? m_DistrictQuery.ToEntityArray(Allocator.TempJob) : new NativeArray<Entity>(0, Allocator.TempJob);
+            var buildingEntities = enableLot ? GetBuildingsWithParkingPolicy() : new NativeArray<Entity>(0, Allocator.TempJob);
+            var parkingLanes = m_ParkingLaneQuery.ToEntityArray(Allocator.TempJob);
+            var garageLanes = m_GarageLaneQuery.ToEntityArray(Allocator.TempJob);
+
+            // Prepare result arrays
+            m_DistrictResults = new NativeArray<DistrictUtilizationResult>(districtEntities.Length, Allocator.TempJob);
+            m_BuildingResults = new NativeArray<BuildingUtilizationResult>(buildingEntities.Length, Allocator.TempJob);
+            m_PricingUpdates = new NativeArray<PricingUpdate>(districtEntities.Length + buildingEntities.Length, Allocator.TempJob);
+
+            JobHandle combinedJobHandle = default;
+
+            // Schedule district utilization job
+            if (enableStreet && districtEntities.Length > 0)
+            {
+                var districtJob = new CalculateDistrictUtilizationJob
+                {
+                    DistrictEntities = districtEntities,
+                    ParkingLanes = parkingLanes,
+                    ParkingLaneData = GetComponentLookup<Game.Net.ParkingLane>(true),
+                    OwnerData = GetComponentLookup<Game.Common.Owner>(true),
+                    BorderDistrictData = GetComponentLookup<Game.Areas.BorderDistrict>(true),
+                    LaneObjectData = GetBufferLookup<LaneObject>(true),
+                    LaneOverlapData = GetBufferLookup<LaneOverlap>(true),
+                    LaneData = GetComponentLookup<Lane>(true),
+                    ParkingLaneComponentData = GetComponentLookup<Game.Net.ParkingLane>(true),
+                    Results = m_DistrictResults
+                };
+
+                var districtJobHandle = districtJob.Schedule(districtEntities.Length, 1, default);
+                combinedJobHandle = JobHandle.CombineDependencies(combinedJobHandle, districtJobHandle);
+            }
+
+            // Schedule building utilization job
+            if (enableLot && buildingEntities.Length > 0)
+            {
+                var buildingJob = new CalculateBuildingUtilizationJob
+                {
+                    BuildingEntities = buildingEntities,
+                    ParkingLanes = parkingLanes,
+                    GarageLanes = garageLanes,
+                    ParkingLaneData = GetComponentLookup<Game.Net.ParkingLane>(true),
+                    GarageLaneData = GetComponentLookup<Game.Net.GarageLane>(true),
+                    OwnerData = GetComponentLookup<Game.Common.Owner>(true),
+                    BuildingData = GetComponentLookup<Game.Buildings.Building>(true),
+                    LaneObjectData = GetBufferLookup<LaneObject>(true),
+                    Results = m_BuildingResults
+                };
+
+                var buildingJobHandle = buildingJob.Schedule(buildingEntities.Length, 1, default);
+                combinedJobHandle = JobHandle.CombineDependencies(combinedJobHandle, buildingJobHandle);
+            }
+
+            // Schedule pricing calculation job
+            if (districtEntities.Length > 0 || buildingEntities.Length > 0)
+            {
+                var pricingJob = new ApplyPricingUpdatesJob
+                {
+                    DistrictResults = m_DistrictResults,
+                    BuildingResults = m_BuildingResults,
+                    BaseStreetPrice = settings.standard_price_street,
+                    MaxStreetPrice = PricingCalculator.CalculateMaxPrice(settings.standard_price_street, settings.max_price_increase_street / 100.0),
+                    MinStreetPrice = PricingCalculator.CalculateMinPrice(settings.standard_price_street, settings.max_price_discount_street / 100.0),
+                    BaseLotPrice = settings.standard_price_lot,
+                    MaxLotPrice = PricingCalculator.CalculateMaxPrice(settings.standard_price_lot, settings.max_price_increase_lot / 100.0),
+                    MinLotPrice = PricingCalculator.CalculateMinPrice(settings.standard_price_lot, settings.max_price_discount_lot / 100.0),
+                    PricingUpdates = m_PricingUpdates
+                };
+
+                var pricingJobHandle = pricingJob.Schedule(combinedJobHandle);
+                combinedJobHandle = pricingJobHandle;
+            }
+
+            // Dispose input arrays (they're no longer needed after scheduling)
+            districtEntities.Dispose();
+            buildingEntities.Dispose();
+            parkingLanes.Dispose();
+            garageLanes.Dispose();
+
+            m_PreviousJobHandle = combinedJobHandle;
+            m_JobInProgress = true;
+            m_HasPendingUpdates = true;
+        }
+
+        private NativeArray<Entity> GetBuildingsWithParkingPolicy()
+        {
+            var tempList = new NativeList<Entity>(Allocator.Temp);
+            var buildingChunks = m_BuildingQuery.ToArchetypeChunkArray(Allocator.Temp);
+
+            foreach (var chunk in buildingChunks)
+            {
+                var buildingEntities = chunk.GetNativeArray(EntityManager.GetEntityTypeHandle());
+
+                for (int i = 0; i < buildingEntities.Length; i++)
+                {
+                    Entity buildingEntity = buildingEntities[i];
+
+                    // Only include buildings that can have parking fee policy
+                    if (m_PolicyManager.TryGetPolicy(buildingEntity, m_LotParkingFeePrefab, out _))
+                    {
+                        tempList.Add(buildingEntity);
+                    }
+                }
+            }
+
+            buildingChunks.Dispose();
+            var result = tempList.ToArray(Allocator.TempJob);
+            tempList.Dispose();
+            return result;
+        }
+
+        private void ApplyPendingUpdates()
+        {
+            if (!m_PricingUpdates.IsCreated)
+                return;
+
+            int appliedUpdates = 0;
+
+            for (int i = 0; i < m_PricingUpdates.Length; i++)
+            {
+                var update = m_PricingUpdates[i];
+
+                if (update.Entity == Entity.Null)
+                    continue;
+
+                try
+                {
+                    if (update.IsDistrict)
+                    {
+                        m_PolicyManager.UpdateOrAddPolicy(update.Entity, m_StreetParkingFeePrefab, update.NewPrice);
+                        LogUtil.Info($"Updated street parking policy for district {update.Entity.Index}: ${update.NewPrice} (Utilization: {update.Utilization:P2})");
+                    }
+                    else
+                    {
+                        m_PolicyManager.UpdateOrAddPolicy(update.Entity, m_LotParkingFeePrefab, update.NewPrice);
+                        LogUtil.Info($"Updated parking policy for building {update.Entity.Index}: ${update.NewPrice} (Utilization: {update.Utilization:P2})");
+                    }
+                    appliedUpdates++;
+                }
+                catch (Exception ex)
+                {
+                    LogUtil.Error($"Failed to apply pricing update to entity {update.Entity.Index}: {ex.Message}");
+                }
+            }
+
+            LogUtil.Info($"Applied {appliedUpdates} pricing updates");
+            DisposeJobArrays();
+        }
+
+        private void DisposeJobArrays()
+        {
+            if (m_DistrictResults.IsCreated) m_DistrictResults.Dispose();
+            if (m_BuildingResults.IsCreated) m_BuildingResults.Dispose();
+            if (m_PricingUpdates.IsCreated) m_PricingUpdates.Dispose();
         }
 
         private void UpdateComponentHandles()
@@ -235,156 +427,24 @@ namespace ParkingPricing
             m_UnspawnedData.Update(this);
             m_PrefabRefData.Update(this);
             m_ObjectGeometryData.Update(this);
-            m_LaneType.Update(this);
-            m_LaneObjectType.Update(this);
-            m_LaneOverlapType.Update(this);
             m_LaneData.Update(this);
             m_CarLaneData.Update(this);
         }
 
-        private void UpdateStreetParking()
-        {
-            if (m_UtilizationCalculator == null)
-            {
-                LogUtil.Warn("UtilizationCalculator not initialized");
-                return;
-            }
 
-            RequireForUpdate(m_DistrictQuery);
-
-            var districtChunks = m_DistrictQuery.ToArchetypeChunkArray(Allocator.Temp);
-            var parkingLanes = m_ParkingLaneQuery.ToEntityArray(Allocator.Temp);
-
-            try
-            {
-                LogUtil.Info($"Updating street parking: {districtChunks.Length} district chunks, {parkingLanes.Length} parking lanes");
-
-                var settings = Mod.m_Setting;
-                int basePrice = settings.standard_price_street;
-                double maxIncreasePct = settings.max_price_increase_street / 100.0;
-                double maxDecreasePct = settings.max_price_discount_street / 100.0;
-                int maxPrice = PricingCalculator.CalculateMaxPrice(basePrice, maxIncreasePct);
-                int minPrice = PricingCalculator.CalculateMinPrice(basePrice, maxDecreasePct);
-
-                ProcessDistrictChunks(districtChunks, parkingLanes, basePrice, maxPrice, minPrice);
-            }
-            finally
-            {
-                districtChunks.Dispose();
-                parkingLanes.Dispose();
-            }
-        }
-
-        private void ProcessDistrictChunks(NativeArray<ArchetypeChunk> districtChunks,
-            NativeArray<Entity> parkingLanes, int basePrice, int maxPrice, int minPrice)
-        {
-            foreach (var chunk in districtChunks)
-            {
-                var districtEntities = chunk.GetNativeArray(EntityManager.GetEntityTypeHandle());
-
-                for (int i = 0; i < districtEntities.Length; i++)
-                {
-                    Entity districtEntity = districtEntities[i];
-
-                    try
-                    {
-                        double utilization = m_UtilizationCalculator.CalculateDistrictUtilization(chunk, districtEntity, parkingLanes);
-                        int newPrice = PricingCalculator.CalculateAdjustedPrice(basePrice, maxPrice, minPrice, utilization);
-                        LogUtil.Info($"District {districtEntity.Index}: Utilization = {utilization:P2}, New Price = {newPrice}");
-
-                        ApplyDistrictParkingPolicy(districtEntity, newPrice);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUtil.Error($"Error processing district {districtEntity.Index}: {ex.Message}");
-                    }
-                }
-            }
-        }
-
-        private void UpdateBuildingParking()
-        {
-            if (m_UtilizationCalculator == null)
-            {
-                LogUtil.Warn("UtilizationCalculator not initialized");
-                return;
-            }
-
-            RequireForUpdate(m_BuildingQuery);
-
-            var buildingChunks = m_BuildingQuery.ToArchetypeChunkArray(Allocator.Temp);
-            var parkingLanes = m_ParkingLaneQuery.ToEntityArray(Allocator.Temp);
-            var garageLanes = m_GarageLaneQuery.ToEntityArray(Allocator.Temp);
-
-            try
-            {
-                LogUtil.Info($"Updating building parking: {buildingChunks.Length} building chunks, {parkingLanes.Length} parking lanes, {garageLanes.Length} garage lanes");
-
-                var settings = Mod.m_Setting;
-                int basePrice = settings.standard_price_lot;
-                double maxIncreasePct = settings.max_price_increase_lot / 100.0;
-                double maxDecreasePct = settings.max_price_discount_lot / 100.0;
-                int maxPrice = PricingCalculator.CalculateMaxPrice(basePrice, maxIncreasePct);
-                int minPrice = PricingCalculator.CalculateMinPrice(basePrice, maxDecreasePct);
-
-                ProcessBuildingChunks(buildingChunks, parkingLanes, garageLanes, basePrice, maxPrice, minPrice);
-            }
-            finally
-            {
-                buildingChunks.Dispose();
-                parkingLanes.Dispose();
-                garageLanes.Dispose();
-            }
-        }
-
-        private void ProcessBuildingChunks(NativeArray<ArchetypeChunk> buildingChunks,
-            NativeArray<Entity> parkingLanes, NativeArray<Entity> garageLanes,
-            int basePrice, int maxPrice, int minPrice)
-        {
-            foreach (var chunk in buildingChunks)
-            {
-                var buildingEntities = chunk.GetNativeArray(EntityManager.GetEntityTypeHandle());
-
-                for (int i = 0; i < buildingEntities.Length; i++)
-                {
-                    Entity buildingEntity = buildingEntities[i];
-
-                    try
-                    {
-                        // Only evaluate buildings that can have parking fee
-                        if (!m_PolicyManager.TryGetPolicy(buildingEntity, m_LotParkingFeePrefab, out _))
-                        {
-                            continue;
-                        }
-
-                        double utilization = m_UtilizationCalculator.CalculateBuildingUtilization(buildingEntity, parkingLanes, garageLanes);
-                        int newPrice = PricingCalculator.CalculateAdjustedPrice(basePrice, maxPrice, minPrice, utilization);
-                        LogUtil.Info($"Building {buildingEntity.Index}: Utilization = {utilization:P2}, New Price = {newPrice}");
-
-                        ApplyLotParkingPolicy(buildingEntity, newPrice);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUtil.Error($"Error processing building {buildingEntity.Index}: {ex.Message}");
-                    }
-                }
-            }
-        }
-
-        private void ApplyDistrictParkingPolicy(Entity districtEntity, int newPrice)
-        {
-            m_PolicyManager.UpdateOrAddPolicy(districtEntity, m_StreetParkingFeePrefab, newPrice);
-            LogUtil.Info($"Updated street parking policy for district {districtEntity.Index}: ${newPrice}");
-        }
-
-        private void ApplyLotParkingPolicy(Entity buildingEntity, int newPrice)
-        {
-            m_PolicyManager.UpdateOrAddPolicy(buildingEntity, m_LotParkingFeePrefab, newPrice);
-            LogUtil.Info($"Updated parking policy for building {buildingEntity.Index}: ${newPrice}");
-        }
 
         protected override void OnDestroy()
         {
+            // Complete any running jobs
+            if (m_JobInProgress)
+            {
+                m_PreviousJobHandle.Complete();
+                m_JobInProgress = false;
+            }
+
+            // Dispose job arrays
+            DisposeJobArrays();
+
             // Dispose persistent queries - EntityQuery doesn't have IsCreated in this Unity version
             m_DistrictQuery.Dispose();
             m_BuildingQuery.Dispose();

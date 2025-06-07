@@ -1,1 +1,1 @@
-- Initial release
+- Refactored to avoid lag by using asynchronous jobs for computation
