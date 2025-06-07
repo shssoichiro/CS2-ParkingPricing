@@ -1,5 +1,4 @@
 using System;
-using Colossal.Json;
 using Colossal.Serialization.Entities;
 using Game;
 using Game.Areas;
@@ -10,6 +9,10 @@ using Game.Buildings;
 using Unity.Collections;
 using Unity.Entities;
 using Game.Vehicles;
+using Colossal.Mathematics;
+using Unity.Mathematics;
+using Game.Common;
+using Game.Objects;
 
 namespace ParkingPricing
 {
@@ -28,6 +31,25 @@ namespace ParkingPricing
         private ComponentTypeHandle<Game.Common.Owner> m_OwnerType;
         private BufferTypeHandle<Policy> m_PolicyType;
         private EntityStorageInfoLookup m_EntityLookup;
+        [ReadOnly]
+        private BufferLookup<Game.Net.SubLane> m_SubLanes;
+        private ComponentLookup<ParkedCar> m_ParkedCarData;
+        [ReadOnly]
+        public ComponentLookup<Unspawned> m_UnspawnedData;
+        [ReadOnly]
+        public ComponentLookup<PrefabRef> m_PrefabRefData;
+        [ReadOnly]
+        public ComponentLookup<ObjectGeometryData> m_ObjectGeometryData;
+        [ReadOnly]
+        public ComponentLookup<Lane> m_LaneType;
+        [ReadOnly]
+        public BufferLookup<LaneObject> m_LaneObjectType;
+        [ReadOnly]
+        public BufferLookup<LaneOverlap> m_LaneOverlapType;
+        [ReadOnly]
+        public ComponentLookup<Lane> m_LaneData;
+        [ReadOnly]
+        public ComponentLookup<Game.Net.CarLane> m_CarLaneData;
 
         // Cached policy prefab entities
         private Entity m_LotParkingFeePrefab;
@@ -50,6 +72,18 @@ namespace ParkingPricing
             m_OwnerType = GetComponentTypeHandle<Game.Common.Owner>(true);
             m_PolicyType = GetBufferTypeHandle<Policy>(false);
             m_EntityLookup = GetEntityStorageInfoLookup();
+
+            // Initialize lookup components that aren't already initialized elsewhere
+            m_SubLanes = GetBufferLookup<Game.Net.SubLane>(true);
+            m_ParkedCarData = GetComponentLookup<ParkedCar>(false);
+            m_UnspawnedData = GetComponentLookup<Unspawned>(true);
+            m_PrefabRefData = GetComponentLookup<PrefabRef>(true);
+            m_ObjectGeometryData = GetComponentLookup<ObjectGeometryData>(true);
+            m_LaneType = GetComponentLookup<Lane>(true);
+            m_LaneObjectType = GetBufferLookup<LaneObject>(true);
+            m_LaneOverlapType = GetBufferLookup<LaneOverlap>(true);
+            m_LaneData = GetComponentLookup<Lane>(true);
+            m_CarLaneData = GetComponentLookup<Game.Net.CarLane>(true);
 
             // Initialize cached prefab entities as null
             m_LotParkingFeePrefab = Entity.Null;
@@ -126,6 +160,18 @@ namespace ParkingPricing
             m_PolicyType.Update(this);
             m_EntityLookup.Update(this);
 
+            // Update lookup components
+            m_SubLanes.Update(this);
+            m_ParkedCarData.Update(this);
+            m_UnspawnedData.Update(this);
+            m_PrefabRefData.Update(this);
+            m_ObjectGeometryData.Update(this);
+            m_LaneType.Update(this);
+            m_LaneObjectType.Update(this);
+            m_LaneOverlapType.Update(this);
+            m_LaneData.Update(this);
+            m_CarLaneData.Update(this);
+
             if (Mod.m_Setting.enable_for_street)
             {
                 UpdateStreetParking();
@@ -151,6 +197,9 @@ namespace ParkingPricing
             utilizationQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<Game.Net.ParkingLane>()
                 .WithAll<Game.Common.Owner>()
+                .WithAll<LaneObject>()
+                .WithAll<LaneOverlap>()
+                .WithAll<Lane>()
                 .Build(this);
 
             var districtChunks = policyQuery.ToArchetypeChunkArray(Allocator.Temp);
@@ -174,7 +223,7 @@ namespace ParkingPricing
                     Entity districtEntity = districtEntities[i];
 
                     // Calculate utilization and price change for this district
-                    double utilization = CalculateDistrictUtilization(districtEntity, parkingLanes);
+                    double utilization = CalculateDistrictUtilization(chunk, districtEntity, parkingLanes);
                     int newPrice = CalculateAdjustedPrice(basePrice, maxPrice, minPrice, utilization);
                     LogUtil.Info($"District {districtEntity.Index}: Utilization = {utilization:P2}, New Price = {newPrice}");
 
@@ -300,7 +349,7 @@ namespace ParkingPricing
                         continue;
                     }
 
-                    GetParkingLaneCounts(laneEntity, parkingLane, ref slotCapacity, ref parkedCars);
+                    GetBuildingParkingLaneCounts(laneEntity, parkingLane, ref slotCapacity, ref parkedCars);
                 }
             }
 
@@ -319,7 +368,7 @@ namespace ParkingPricing
             return slotCapacity > 0 ? (double)parkedCars / slotCapacity : 0.0;
         }
 
-        private void GetParkingLaneCounts(Entity subLane, Game.Net.ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars)
+        private void GetBuildingParkingLaneCounts(Entity subLane, Game.Net.ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars)
         {
             // Get parking slot count using game's method
             Entity prefab = EntityManager.GetComponentData<PrefabRef>(subLane).m_Prefab;
@@ -347,14 +396,178 @@ namespace ParkingPricing
             LogUtil.Debug($"Found parking lane: SlotInterval={parkingLaneData.m_SlotInterval:P2}, SlotCapacity={slotCapacity}, ParkedCars={parkedCars}");
         }
 
-        private double CalculateDistrictUtilization(Entity districtEntity, NativeArray<Entity> parkingLanes)
+        private void GetStreetParkingLaneCapacity(Entity subLane, Game.Net.ParkingLane parkingLane, DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange, ref int slotCapacity, ref int parkedCars)
+        {
+            // Get parking slot count using game's method
+            Entity prefab = EntityManager.GetComponentData<PrefabRef>(subLane).m_Prefab;
+            Curve curve = EntityManager.GetComponentData<Curve>(subLane);
+            var parkingLaneData = EntityManager.GetComponentData<ParkingLaneData>(prefab);
+            var laneObjects = EntityManager.GetBuffer<LaneObject>(subLane, true);
+
+            if (parkingLaneData.m_SlotInterval != 0f)
+            {
+                int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
+                slotCapacity += parkingSlotCount;
+
+                // Count parked cars in this lane
+                for (int j = 0; j < laneObjects.Length; j++)
+                {
+                    if (EntityManager.HasComponent<ParkedCar>(laneObjects[j].m_LaneObject))
+                    {
+                        parkedCars++;
+                    }
+                }
+                return;
+            }
+
+            // Initialize variables for calculating maximum parking space between obstacles
+            float maxParkingSpace = 0f;
+            float2 currentOffsets = math.select(0f, 0.5f, (parkingLane.m_Flags & ParkingLaneFlags.StartingLane) == 0);
+            float3 currentPosition = curve.m_Bezier.a;
+
+            // Initialize variables for tracking parked cars along the curve
+            float nextCarPosition = 2f; // 2f means no more cars (beyond curve end)
+            float2 nextCarOffsets = 0f;
+            int carIndex = 0;
+
+            // Find the first parked car along the curve
+            while (carIndex < laneObjects.Length)
+            {
+                LaneObject currentLaneObject = laneObjects[carIndex++];
+                if (m_ParkedCarData.HasComponent(currentLaneObject.m_LaneObject) && !m_UnspawnedData.HasComponent(currentLaneObject.m_LaneObject))
+                {
+                    nextCarPosition = currentLaneObject.m_CurvePosition.x;
+                    nextCarOffsets = VehicleUtils.GetParkingOffsets(currentLaneObject.m_LaneObject, ref m_PrefabRefData, ref m_ObjectGeometryData) + 1f;
+                    break;
+                }
+            }
+
+            // Initialize variables for tracking lane overlaps (intersections, etc.)
+            float2 nextOverlapRange = 2f; // 2f means no more overlaps
+            int overlapIndex = 0;
+
+            // Find the first lane overlap
+            if (overlapIndex < laneOverlaps.Length)
+            {
+                LaneOverlap currentOverlap = laneOverlaps[overlapIndex++];
+                nextOverlapRange = new float2((int)currentOverlap.m_ThisStart, (int)currentOverlap.m_ThisEnd) * 0.003921569f;
+            }
+
+            // Initialize variables for handling blocked ranges (areas where parking is prohibited)
+            float3 blockedCenterPosition = default(float3);
+            float3 blockedDistances = default(float3);
+            if (blockedRange.max >= blockedRange.min)
+            {
+                blockedCenterPosition = MathUtils.Position(curve.m_Bezier, MathUtils.Center(blockedRange));
+                blockedDistances.x = math.distance(MathUtils.Position(curve.m_Bezier, blockedRange.min), blockedCenterPosition);
+                blockedDistances.y = math.distance(MathUtils.Position(curve.m_Bezier, blockedRange.max), blockedCenterPosition);
+            }
+
+            // Main loop: iterate through all obstacles (cars and overlaps) along the curve
+            float segmentLength;
+            while (nextCarPosition != 2f || nextOverlapRange.x != 2f)
+            {
+                float2 obstacleRange;
+                float nextObstacleEndOffset;
+
+                // Determine which obstacle comes first: parked car or lane overlap
+                if (nextCarPosition <= nextOverlapRange.x)
+                {
+                    // Process parked car obstacle
+                    obstacleRange = nextCarPosition;
+                    currentOffsets.y = nextCarOffsets.x;
+                    nextObstacleEndOffset = nextCarOffsets.y;
+                    nextCarPosition = 2f; // Reset to indicate no more cars until we find the next one
+
+                    // Find next parked car
+                    while (carIndex < laneObjects.Length)
+                    {
+                        LaneObject nextLaneObject = laneObjects[carIndex++];
+                        if (m_ParkedCarData.HasComponent(nextLaneObject.m_LaneObject) && !m_UnspawnedData.HasComponent(nextLaneObject.m_LaneObject))
+                        {
+                            nextCarPosition = nextLaneObject.m_CurvePosition.x;
+                            nextCarOffsets = VehicleUtils.GetParkingOffsets(nextLaneObject.m_LaneObject, ref m_PrefabRefData, ref m_ObjectGeometryData) + 1f;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    // Process lane overlap obstacle
+                    obstacleRange = nextOverlapRange;
+                    currentOffsets.y = 0.5f;
+                    nextObstacleEndOffset = 0.5f;
+                    nextOverlapRange = 2f; // Reset to indicate no more overlaps until we find the next one
+
+                    // Find next lane overlap, merging consecutive overlaps
+                    while (overlapIndex < laneOverlaps.Length)
+                    {
+                        LaneOverlap nextOverlap = laneOverlaps[overlapIndex++];
+                        float2 nextOverlapNormalized = new float2((int)nextOverlap.m_ThisStart, (int)nextOverlap.m_ThisEnd) * 0.003921569f;
+                        if (nextOverlapNormalized.x <= obstacleRange.y)
+                        {
+                            // Merge consecutive overlaps
+                            obstacleRange.y = math.max(obstacleRange.y, nextOverlapNormalized.y);
+                            continue;
+                        }
+                        nextOverlapRange = nextOverlapNormalized;
+                        break;
+                    }
+                }
+
+                // Calculate the available parking space in the current segment
+                float3 segmentEndPosition = MathUtils.Position(curve.m_Bezier, obstacleRange.x);
+                segmentLength = math.distance(currentPosition, segmentEndPosition) - math.csum(currentOffsets);
+
+                // Adjust for blocked ranges if they affect this segment
+                if (blockedRange.max >= blockedRange.min)
+                {
+                    float distanceToBlockedStart = math.distance(currentPosition, blockedCenterPosition) - currentOffsets.x - blockedDistances.x;
+                    float distanceToBlockedEnd = math.distance(segmentEndPosition, blockedCenterPosition) - currentOffsets.y - blockedDistances.y;
+                    segmentLength = math.min(segmentLength, math.max(distanceToBlockedStart, distanceToBlockedEnd));
+                }
+
+                // Update the maximum parking space found so far
+                maxParkingSpace = math.max(maxParkingSpace, segmentLength);
+
+                // Move to the next segment
+                currentOffsets.x = nextObstacleEndOffset;
+                currentPosition = MathUtils.Position(curve.m_Bezier, obstacleRange.y);
+            }
+
+            // Process the final segment from the last obstacle to the end of the curve
+            currentOffsets.y = math.select(0f, 0.5f, (parkingLane.m_Flags & ParkingLaneFlags.EndingLane) == 0);
+            segmentLength = math.distance(currentPosition, curve.m_Bezier.d) - math.csum(currentOffsets);
+
+            // Adjust final segment for blocked ranges
+            if (blockedRange.max >= blockedRange.min)
+            {
+                float distanceToBlockedStart = math.distance(currentPosition, blockedCenterPosition) - currentOffsets.x - blockedDistances.x;
+                float distanceToBlockedEnd = math.distance(curve.m_Bezier.d, blockedCenterPosition) - currentOffsets.y - blockedDistances.y;
+                segmentLength = math.min(segmentLength, math.max(distanceToBlockedStart, distanceToBlockedEnd));
+            }
+
+            // Update maximum parking space with the final segment
+            maxParkingSpace = math.max(maxParkingSpace, segmentLength);
+
+            // Apply maximum car length constraint if specified
+            var availableParkingLength = parkingLaneData.m_MaxCarLength != 0f ? math.min(maxParkingSpace, parkingLaneData.m_MaxCarLength) : maxParkingSpace;
+
+            // Count all objects in the lane as parked cars for utilization calculation
+            parkedCars += laneObjects.Length;
+
+            LogUtil.Debug($"Found parking lane: SlotInterval={parkingLaneData.m_SlotInterval:P2}, carsPresent={laneObjects.Length}");
+        }
+
+        private double CalculateDistrictUtilization(ArchetypeChunk chunk, Entity districtEntity, NativeArray<Entity> parkingLanes)
         {
             double totalCapacity = 0;
             double totalOccupied = 0;
 
             // Check all parking lanes to see which belong to this district
-            foreach (Entity laneEntity in parkingLanes)
+            for (int i = 0; i < parkingLanes.Length; i++)
             {
+                var laneEntity = parkingLanes[i];
                 if (EntityManager.HasComponent<Game.Net.ParkingLane>(laneEntity) &&
                     EntityManager.HasComponent<Game.Common.Owner>(laneEntity))
                 {
@@ -384,22 +597,30 @@ namespace ParkingPricing
                             int laneCapacity = 0;
                             int laneOccupied = 0;
 
-                            // Get parking slot count using game's method
-                            GetParkingLaneCounts(laneEntity, parkingLane, ref laneCapacity, ref laneOccupied);
-
-                            // Determine weight based on district ownership
-                            double weight;
-                            if (leftMatch && rightMatch)
+                            // Get lane data directly from the lane entity
+                            if (EntityManager.HasBuffer<LaneObject>(laneEntity) &&
+                                EntityManager.HasBuffer<LaneOverlap>(laneEntity) &&
+                                EntityManager.HasComponent<Lane>(laneEntity))
                             {
-                                weight = 1.0; // Full capacity/occupancy if both sides belong to district
-                            }
-                            else
-                            {
-                                weight = 0.5; // Half capacity/occupancy if only one side belongs to district
-                            }
+                                DynamicBuffer<LaneOverlap> laneOverlaps = EntityManager.GetBuffer<LaneOverlap>(laneEntity, true);
+                                Lane laneData = EntityManager.GetComponentData<Lane>(laneEntity);
+                                Bounds1 blockedRange = GetBlockedRange(owner, laneData);
+                                GetStreetParkingLaneCapacity(laneEntity, parkingLane, laneOverlaps, blockedRange, ref laneCapacity, ref laneOccupied);
 
-                            totalCapacity += laneCapacity * weight;
-                            totalOccupied += laneOccupied * weight;
+                                // Determine weight based on district ownership
+                                double weight;
+                                if (leftMatch && rightMatch)
+                                {
+                                    weight = 1.0; // Full capacity/occupancy if both sides belong to district
+                                }
+                                else
+                                {
+                                    weight = 0.5; // Half capacity/occupancy if only one side belongs to district
+                                }
+
+                                totalCapacity += laneCapacity * weight;
+                                totalOccupied += laneOccupied * weight;
+                            }
                         }
                     }
                 }
@@ -407,6 +628,32 @@ namespace ParkingPricing
 
             // Calculate utilization percentage
             return totalCapacity > 0 ? totalOccupied / totalCapacity : 0.0;
+        }
+
+        private Bounds1 GetBlockedRange(Owner owner, Lane laneData)
+        {
+            Bounds1 result = new Bounds1(2f, -1f);
+            if (m_SubLanes.HasBuffer(owner.m_Owner))
+            {
+                DynamicBuffer<Game.Net.SubLane> dynamicBuffer = m_SubLanes[owner.m_Owner];
+                for (int i = 0; i < dynamicBuffer.Length; i++)
+                {
+                    Entity subLane = dynamicBuffer[i].m_SubLane;
+                    Lane lane = m_LaneData[subLane];
+                    if (laneData.m_StartNode.EqualsIgnoreCurvePos(lane.m_MiddleNode) && m_CarLaneData.HasComponent(subLane))
+                    {
+                        Game.Net.CarLane carLane = m_CarLaneData[subLane];
+                        if (carLane.m_BlockageEnd >= carLane.m_BlockageStart)
+                        {
+                            Bounds1 blockageBounds = carLane.blockageBounds;
+                            blockageBounds.min = math.select(blockageBounds.min - 0.01f, 0f, blockageBounds.min <= 0.51f);
+                            blockageBounds.max = math.select(blockageBounds.max + 0.01f, 1f, blockageBounds.max >= 0.49f);
+                            result |= blockageBounds;
+                        }
+                    }
+                }
+            }
+            return result;
         }
 
         private void ApplyDistrictParkingPolicy(Entity districtEntity, int newPrice)
