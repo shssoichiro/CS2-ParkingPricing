@@ -26,7 +26,6 @@ namespace ParkingPricing
 
         // Component type handles
         private ComponentTypeHandle<District> m_DistrictType;
-        private ComponentTypeHandle<Game.Buildings.ParkingFacility> m_parkingFacility;
         private ComponentTypeHandle<Game.Buildings.Building> m_BuildingType;
         private ComponentTypeHandle<Game.Net.ParkingLane> m_ParkingLaneType;
         private ComponentTypeHandle<Game.Net.GarageLane> m_GarageLaneType;
@@ -101,7 +100,6 @@ namespace ParkingPricing
         private void InitializeComponentHandles()
         {
             m_DistrictType = GetComponentTypeHandle<District>(true);
-            m_parkingFacility = GetComponentTypeHandle<Game.Buildings.ParkingFacility>(true);
             m_BuildingType = GetComponentTypeHandle<Game.Buildings.Building>(true);
             m_ParkingLaneType = GetComponentTypeHandle<Game.Net.ParkingLane>(true);
             m_GarageLaneType = GetComponentTypeHandle<Game.Net.GarageLane>(true);
