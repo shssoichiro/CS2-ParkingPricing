@@ -10,7 +10,7 @@
 		file where mod information which is required for publishing mod on PDX mods are stored-->
 		<PublishConfigurationPath>Properties\PublishConfiguration.xml</PublishConfigurationPath>
 		<Title>Parking Pricing</Title>
-		<Version>0.1.0</Version>
+		<Version>1.0.0</Version>
 		<Description>Dynamically adjusts parking lot pricing throughout your city based on demand</Description>
 		<Copyright>Copyright © 2025</Copyright>
 
@@ -93,5 +93,11 @@
 	<Import Project="ModAssemblyInfo\ModAssemblyInfo.csproj" />
 	<ItemGroup>
 		<None Include="ModAssemblyInfo\ModAssemblyInfo.csproj" />
+	</ItemGroup>
+
+	<!-- Automatically build PublishConfiguration.xml file. -->
+	<Import Project="Properties\PublishConfiguration.csproj" />
+	<ItemGroup>
+		<None Include="Properties\PublishConfiguration.csproj" />
 	</ItemGroup>
 </Project>

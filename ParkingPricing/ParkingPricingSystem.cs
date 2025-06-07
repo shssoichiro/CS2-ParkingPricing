@@ -138,8 +138,7 @@ namespace ParkingPricing
             // Initialize utilization calculator after game loads and prefabs are ready
             m_UtilizationCalculator = new UtilizationCalculator(EntityManager,
                 m_SubLanes, m_ParkedCarData, m_UnspawnedData, m_PrefabRefData,
-                m_ObjectGeometryData, m_LaneType, m_LaneObjectType, m_LaneOverlapType,
-                m_LaneData, m_CarLaneData);
+                m_ObjectGeometryData, m_LaneData, m_CarLaneData);
         }
 
         private void InitializePolicyPrefabs()

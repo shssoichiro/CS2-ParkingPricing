@@ -22,11 +22,11 @@ namespace ParkingPricing
 
         public override void SetDefaults()
         {
-            enable_for_street = false;
+            enable_for_street = true;
             target_occupancy_street = 50;
             standard_price_street = 5;
-            max_price_increase_street = 200;
-            max_price_discount_street = 50;
+            max_price_increase_street = 300;
+            max_price_discount_street = 100;
             enable_for_lot = true;
             target_occupancy_lot = 50;
             standard_price_lot = 10;

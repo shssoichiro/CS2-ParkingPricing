@@ -19,9 +19,6 @@ namespace ParkingPricing
         private readonly ComponentLookup<Unspawned> m_UnspawnedData;
         private readonly ComponentLookup<PrefabRef> m_PrefabRefData;
         private readonly ComponentLookup<ObjectGeometryData> m_ObjectGeometryData;
-        private readonly ComponentLookup<Lane> m_LaneType;
-        private readonly BufferLookup<LaneObject> m_LaneObjectType;
-        private readonly BufferLookup<LaneOverlap> m_LaneOverlapType;
         private readonly ComponentLookup<Lane> m_LaneData;
         private readonly ComponentLookup<Game.Net.CarLane> m_CarLaneData;
 
@@ -31,9 +28,6 @@ namespace ParkingPricing
             ComponentLookup<Unspawned> unspawnedData,
             ComponentLookup<PrefabRef> prefabRefData,
             ComponentLookup<ObjectGeometryData> objectGeometryData,
-            ComponentLookup<Lane> laneType,
-            BufferLookup<LaneObject> laneObjectType,
-            BufferLookup<LaneOverlap> laneOverlapType,
             ComponentLookup<Lane> laneData,
             ComponentLookup<Game.Net.CarLane> carLaneData)
         {
@@ -43,9 +37,6 @@ namespace ParkingPricing
             m_UnspawnedData = unspawnedData;
             m_PrefabRefData = prefabRefData;
             m_ObjectGeometryData = objectGeometryData;
-            m_LaneType = laneType;
-            m_LaneObjectType = laneObjectType;
-            m_LaneOverlapType = laneOverlapType;
             m_LaneData = laneData;
             m_CarLaneData = carLaneData;
         }
