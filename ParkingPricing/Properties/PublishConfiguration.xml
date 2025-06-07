@@ -61,4 +61,5 @@ of parking facilities. This will be improved in a future patch.
 
     <!-- External links. Supported types are discord, github, youtube, twitch, x, paypal, patreon, buymeacoffee, kofi, crowdin, gitlab, gofundme.  Can be set multiple times. -->
     <ExternalLink Type="github" Url="https://github.com/shssoichiro/CS2-ParkingPricing" />
+	<ExternalLink Type="discord" Url="https://discord.gg/HTav7ARPs2" />
 </Publish>
