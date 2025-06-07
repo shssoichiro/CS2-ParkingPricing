@@ -393,7 +393,7 @@ namespace ParkingPricing
                     }
                 }
             }
-            LogUtil.Debug($"Found parking lane: SlotInterval={parkingLaneData.m_SlotInterval:P2}, SlotCapacity={slotCapacity}, ParkedCars={parkedCars}");
+            LogUtil.Debug($"Found building parking lane: SlotCapacity={slotCapacity}, ParkedCars={parkedCars}");
         }
 
         private void GetStreetParkingLaneCapacity(Entity subLane, Game.Net.ParkingLane parkingLane, DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange, ref int slotCapacity, ref int parkedCars)
@@ -420,8 +420,11 @@ namespace ParkingPricing
                 return;
             }
 
-            // Initialize variables for calculating maximum parking space between obstacles
-            float maxParkingSpace = 0f;
+            // Determine the standard car length for calculating parking spaces
+            float standardCarLength = parkingLaneData.m_MaxCarLength != 0f ? parkingLaneData.m_MaxCarLength : 5f;
+
+            // Initialize variables for calculating total parking spaces between obstacles
+            int freeParkingSpaces = 0;
             float2 currentOffsets = math.select(0f, 0.5f, (parkingLane.m_Flags & ParkingLaneFlags.StartingLane) == 0);
             float3 currentPosition = curve.m_Bezier.a;
 
@@ -527,8 +530,12 @@ namespace ParkingPricing
                     segmentLength = math.min(segmentLength, math.max(distanceToBlockedStart, distanceToBlockedEnd));
                 }
 
-                // Update the maximum parking space found so far
-                maxParkingSpace = math.max(maxParkingSpace, segmentLength);
+                // Calculate how many cars can fit in this segment and add to total
+                if (segmentLength > 0)
+                {
+                    int spacesInSegment = (int)math.floor(segmentLength / standardCarLength);
+                    freeParkingSpaces += spacesInSegment;
+                }
 
                 // Move to the next segment
                 currentOffsets.x = nextObstacleEndOffset;
@@ -547,16 +554,20 @@ namespace ParkingPricing
                 segmentLength = math.min(segmentLength, math.max(distanceToBlockedStart, distanceToBlockedEnd));
             }
 
-            // Update maximum parking space with the final segment
-            maxParkingSpace = math.max(maxParkingSpace, segmentLength);
+            // Calculate spaces in the final segment and add to total
+            if (segmentLength > 0)
+            {
+                int spacesInFinalSegment = (int)math.floor(segmentLength / standardCarLength);
+                freeParkingSpaces += spacesInFinalSegment;
+            }
 
-            // Apply maximum car length constraint if specified
-            var availableParkingLength = parkingLaneData.m_MaxCarLength != 0f ? math.min(maxParkingSpace, parkingLaneData.m_MaxCarLength) : maxParkingSpace;
+            // Update slot capacity with the calculated total parking spaces
+            slotCapacity += freeParkingSpaces + laneObjects.Length;
 
             // Count all objects in the lane as parked cars for utilization calculation
             parkedCars += laneObjects.Length;
 
-            LogUtil.Debug($"Found parking lane: SlotInterval={parkingLaneData.m_SlotInterval:P2}, carsPresent={laneObjects.Length}");
+            LogUtil.Debug($"Found street parking lane: SlotCapacity={slotCapacity}, ParkedCars={parkedCars}");
         }
 
         private double CalculateDistrictUtilization(ArchetypeChunk chunk, Entity districtEntity, NativeArray<Entity> parkingLanes)
