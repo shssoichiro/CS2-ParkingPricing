@@ -5,11 +5,15 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using Game.Net;
 using Game.Common;
-using Game.Areas;
 using Game.Objects;
 using Game.Prefabs;
 using Game.Vehicles;
 using Colossal.Mathematics;
+using Game.Areas;
+using Game.Buildings;
+using CarLane = Game.Net.CarLane;
+using ParkingLane = Game.Net.ParkingLane;
+using SubLane = Game.Net.SubLane;
 
 namespace ParkingPricing
 {
@@ -19,9 +23,9 @@ namespace ParkingPricing
     {
         [ReadOnly] public NativeArray<Entity> DistrictEntities;
         [ReadOnly] public NativeArray<Entity> ParkingLanes;
-        [ReadOnly] public ComponentLookup<Game.Net.ParkingLane> ParkingLaneData;
-        [ReadOnly] public ComponentLookup<Game.Common.Owner> OwnerData;
-        [ReadOnly] public ComponentLookup<Game.Areas.BorderDistrict> BorderDistrictData;
+        [ReadOnly] public ComponentLookup<ParkingLane> ParkingLaneData;
+        [ReadOnly] public ComponentLookup<Owner> OwnerData;
+        [ReadOnly] public ComponentLookup<BorderDistrict> BorderDistrictData;
         [ReadOnly] public BufferLookup<LaneObject> LaneObjectData;
         [ReadOnly] public BufferLookup<LaneOverlap> LaneOverlapData;
         [ReadOnly] public ComponentLookup<Lane> LaneData;
@@ -31,8 +35,8 @@ namespace ParkingPricing
         [ReadOnly] public ComponentLookup<ParkedCar> ParkedCarData;
         [ReadOnly] public ComponentLookup<Unspawned> UnspawnedData;
         [ReadOnly] public ComponentLookup<ObjectGeometryData> ObjectGeometryData;
-        [ReadOnly] public BufferLookup<Game.Net.SubLane> SubLanes;
-        [ReadOnly] public ComponentLookup<Game.Net.CarLane> CarLaneData;
+        [ReadOnly] public BufferLookup<SubLane> SubLanes;
+        [ReadOnly] public ComponentLookup<CarLane> CarLaneData;
 
         [WriteOnly] public NativeArray<DistrictUtilizationResult> Results;
 
@@ -43,10 +47,7 @@ namespace ParkingPricing
             double totalOccupied = 0;
 
             // Check all parking lanes to see which belong to this district
-            for (int i = 0; i < ParkingLanes.Length; i++)
-            {
-                var laneEntity = ParkingLanes[i];
-
+            foreach (var laneEntity in ParkingLanes) {
                 if (!ParkingLaneData.HasComponent(laneEntity) || !OwnerData.HasComponent(laneEntity))
                     continue;
 
@@ -98,7 +99,7 @@ namespace ParkingPricing
             };
         }
 
-        private void GetStreetParkingLaneCapacity(Entity subLane, Game.Net.ParkingLane parkingLane, DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange, ref int slotCapacity, ref int parkedCars)
+        private void GetStreetParkingLaneCapacity(Entity subLane, ParkingLane parkingLane, DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange, ref int slotCapacity, ref int parkedCars)
         {
             // Get parking slot count using game's method
             var prefab = PrefabRefData[subLane].m_Prefab;
@@ -154,7 +155,7 @@ namespace ParkingPricing
             if (overlapIndex < laneOverlaps.Length)
             {
                 var currentOverlap = laneOverlaps[overlapIndex++];
-                nextOverlapRange = new float2((int)currentOverlap.m_ThisStart, (int)currentOverlap.m_ThisEnd) * ParkingPricingConstants.LANE_POSITION_MULTIPLIER;
+                nextOverlapRange = new float2(currentOverlap.m_ThisStart, currentOverlap.m_ThisEnd) * ParkingPricingConstants.LANE_POSITION_MULTIPLIER;
             }
 
             // Initialize variables for handling blocked ranges (areas where parking is prohibited)
@@ -207,7 +208,7 @@ namespace ParkingPricing
                     while (overlapIndex < laneOverlaps.Length)
                     {
                         var nextOverlap = laneOverlaps[overlapIndex++];
-                        float2 nextOverlapNormalized = new float2((int)nextOverlap.m_ThisStart, (int)nextOverlap.m_ThisEnd) * ParkingPricingConstants.LANE_POSITION_MULTIPLIER;
+                        float2 nextOverlapNormalized = new float2(nextOverlap.m_ThisStart, nextOverlap.m_ThisEnd) * ParkingPricingConstants.LANE_POSITION_MULTIPLIER;
                         if (nextOverlapNormalized.x <= obstacleRange.y)
                         {
                             // Merge consecutive overlaps
@@ -303,10 +304,10 @@ namespace ParkingPricing
         [ReadOnly] public NativeArray<Entity> BuildingEntities;
         [ReadOnly] public NativeArray<Entity> ParkingLanes;
         [ReadOnly] public NativeArray<Entity> GarageLanes;
-        [ReadOnly] public ComponentLookup<Game.Net.ParkingLane> ParkingLaneData;
-        [ReadOnly] public ComponentLookup<Game.Net.GarageLane> GarageLaneData;
-        [ReadOnly] public ComponentLookup<Game.Common.Owner> OwnerData;
-        [ReadOnly] public ComponentLookup<Game.Buildings.Building> BuildingData;
+        [ReadOnly] public ComponentLookup<ParkingLane> ParkingLaneData;
+        [ReadOnly] public ComponentLookup<GarageLane> GarageLaneData;
+        [ReadOnly] public ComponentLookup<Owner> OwnerData;
+        [ReadOnly] public ComponentLookup<Building> BuildingData;
         [ReadOnly] public BufferLookup<LaneObject> LaneObjectData;
         [ReadOnly] public ComponentLookup<PrefabRef> PrefabRefData;
         [ReadOnly] public ComponentLookup<Curve> CurveData;
@@ -322,9 +323,7 @@ namespace ParkingPricing
             int parkedCars = 0;
 
             // Check parking lanes that belong to this building
-            for (int i = 0; i < ParkingLanes.Length; i++)
-            {
-                Entity laneEntity = ParkingLanes[i];
+            foreach (var laneEntity in ParkingLanes) {
                 if (DoesLaneBelongToBuilding(laneEntity, buildingEntity))
                 {
                     if (ParkingLaneData.HasComponent(laneEntity))
@@ -341,9 +340,7 @@ namespace ParkingPricing
             }
 
             // Check garage lanes that belong to this building
-            for (int i = 0; i < GarageLanes.Length; i++)
-            {
-                Entity laneEntity = GarageLanes[i];
+            foreach (var laneEntity in GarageLanes) {
                 if (DoesLaneBelongToBuilding(laneEntity, buildingEntity))
                 {
                     if (GarageLaneData.HasComponent(laneEntity))
@@ -362,7 +359,7 @@ namespace ParkingPricing
             };
         }
 
-        private void GetBuildingParkingLaneCounts(Entity subLane, Game.Net.ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars)
+        private void GetBuildingParkingLaneCounts(Entity subLane, ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars)
         {
             // Get parking slot count using game's method
             Entity prefab = PrefabRefData[subLane].m_Prefab;
@@ -429,12 +426,9 @@ namespace ParkingPricing
 
         public EntityCommandBuffer EntityCommandBuffer;
 
-        public void Execute()
-        {
+        public void Execute() {
             // Process district results
-            for (int i = 0; i < DistrictResults.Length; i++)
-            {
-                var result = DistrictResults[i];
+            foreach (var result in DistrictResults) {
                 int newPrice = PricingCalculator.CalculateAdjustedPrice(
                     BaseStreetPrice, MaxStreetPrice, MinStreetPrice, result.Utilization);
 
@@ -449,9 +443,7 @@ namespace ParkingPricing
             }
 
             // Process building results
-            for (int i = 0; i < BuildingResults.Length; i++)
-            {
-                var result = BuildingResults[i];
+            foreach (var result in BuildingResults) {
                 int newPrice = PricingCalculator.CalculateAdjustedPrice(
                     BaseLotPrice, MaxLotPrice, MinLotPrice, result.Utilization);
 
@@ -496,9 +488,7 @@ namespace ParkingPricing
             int updateIndex = 0;
 
             // Process district results
-            for (int i = 0; i < DistrictResults.Length; i++)
-            {
-                var result = DistrictResults[i];
+            foreach (var result in DistrictResults) {
                 int newPrice = PricingCalculator.CalculateAdjustedPrice(
                     BaseStreetPrice, MaxStreetPrice, MinStreetPrice, result.Utilization);
 
@@ -512,9 +502,7 @@ namespace ParkingPricing
             }
 
             // Process building results
-            for (int i = 0; i < BuildingResults.Length; i++)
-            {
-                var result = BuildingResults[i];
+            foreach (var result in BuildingResults) {
                 int newPrice = PricingCalculator.CalculateAdjustedPrice(
                     BaseLotPrice, MaxLotPrice, MinLotPrice, result.Utilization);
 
