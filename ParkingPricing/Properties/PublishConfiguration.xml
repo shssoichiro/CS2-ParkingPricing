@@ -4,59 +4,60 @@
 
 <Publish>
     <!-- Mod ID must be 0 for publishing a mod for the first time.  Mod ID must be set in order to update an existing mod. -->
-    <ModId Value="112452" />
+    <ModId Value="112452"/>
 
     <!-- Name of the mod to display to players.  Copied from assembly Title. -->
-    <DisplayName Value="Parking Pricing" />
+    <DisplayName Value="Parking Pricing"/>
 
     <!-- Short description of the mod.  Copied from assembly Description. -->
-    <ShortDescription Value="Dynamically adjusts parking lot pricing throughout your city based on demand" />
+    <ShortDescription Value="Dynamically adjusts parking lot pricing throughout your city based on demand"/>
 
     <!-- Long description of the mod.  Copied from ReadMe.md file.  Supports minimal markdown subset. -->
     <LongDescription>
-# Parking Pricing
+        # Parking Pricing
 
-A mod for Cities Skylines II that automatically adjusts prices of parking spots in your city based on demand.
-Will work with any paid parking, including lots, garages, and integrated parking for public transit stations, etc.
+        A mod for Cities Skylines II that automatically adjusts prices of parking spots in your city based on demand.
+        Will work with any paid parking, including lots, garages, and integrated parking for public transit stations,
+        etc.
 
-NOTE: Street parking must be inside a district for pricing to be adjusted,
-since we use the district policy for street parking.
-</LongDescription>
+        NOTE: Street parking must be inside a district for pricing to be adjusted,
+        since we use the district policy for street parking.
+    </LongDescription>
 
     <!-- Thumbnail. -->
-    <Thumbnail Value="Properties/Thumbnail.png" />
+    <Thumbnail Value="Properties/Thumbnail.png"/>
 
     <!-- Screenshot.  Copied from Screenshots folder.  Include no spaces in file names.  Max file size is 2.1MB.  Can be set multiple times. -->
-    <Screenshot Value="Properties\Screenshots\01.png" />
-    <Screenshot Value="Properties\Screenshots\02.png" />
-    <Screenshot Value="Properties\Screenshots\03.png" />
+    <Screenshot Value="Properties\Screenshots\01.png"/>
+    <Screenshot Value="Properties\Screenshots\02.png"/>
+    <Screenshot Value="Properties\Screenshots\03.png"/>
 
 
     <!-- Tag.  Can be set multiple times. -->
-    <Tag Value="Code Mod" />
+    <Tag Value="Code Mod"/>
 
     <!-- Link to the forum post where the mod can be discussed. -->
-    <ForumLink Value="https://forum.paradoxplaza.com/forum/threads/parking-pricing.1769534/" />
+    <ForumLink Value="https://forum.paradoxplaza.com/forum/threads/parking-pricing.1769534/"/>
 
     <!-- Version of the mod.  Copied from assembly Version. -->
-    <ModVersion Value="1.0.1" />
+    <ModVersion Value="1.0.1"/>
 
     <!-- Recommended version of the base game to use the mod. -->
-    <GameVersion Value="1.2.*" />
+    <GameVersion Value="1.2.*"/>
 
     <!-- Dependency for the mod.  Can be set multiple times. -->
-    <Dependency Id="" />
+    <Dependency Id=""/>
 
     <!-- Required DLC.  Can be set multiple times. -->
     <!-- Supported values are "Landmark Buildings", "San Fransisco Set", "Beach Properties", "Urban Promenades", "Modern Architecture" -->
-    <RequiredDLC Value="" />
+    <RequiredDLC Value=""/>
 
     <!-- Change log.  Copied from ChangeLog.md file.  Supports minimal markdown subset. -->
     <ChangeLog>
-- Refactored to avoid lag by using asynchronous jobs for computation
-</ChangeLog>
+        - Refactored to avoid lag by using asynchronous jobs for computation
+    </ChangeLog>
 
     <!-- External links. Supported types are discord, github, youtube, twitch, x, paypal, patreon, buymeacoffee, kofi, crowdin, gitlab, gofundme.  Can be set multiple times. -->
-    <ExternalLink Type="github" Url="https://github.com/shssoichiro/CS2-ParkingPricing" />
-	<ExternalLink Type="discord" Url="https://discord.gg/HTav7ARPs2" />
+    <ExternalLink Type="github" Url="https://github.com/shssoichiro/CS2-ParkingPricing"/>
+    <ExternalLink Type="discord" Url="https://discord.gg/HTav7ARPs2"/>
 </Publish>

@@ -1,26 +1,25 @@
+using Colossal.Mathematics;
+using Game.Areas;
+using Game.Buildings;
+using Game.Common;
+using Game.Net;
+using Game.Objects;
+using Game.Prefabs;
+using Game.Vehicles;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
-using Game.Net;
-using Game.Common;
-using Game.Objects;
-using Game.Prefabs;
-using Game.Vehicles;
-using Colossal.Mathematics;
-using Game.Areas;
-using Game.Buildings;
+using UnityEngine;
 using CarLane = Game.Net.CarLane;
 using ParkingLane = Game.Net.ParkingLane;
 using SubLane = Game.Net.SubLane;
 
-namespace ParkingPricing
-{
+namespace ParkingPricing {
     // Job for calculating district utilization in parallel
     [BurstCompile]
-    public struct CalculateDistrictUtilizationJob : IJobParallelFor
-    {
+    public struct CalculateDistrictUtilizationJob : IJobParallelFor {
         [ReadOnly] public NativeArray<Entity> DistrictEntities;
         [ReadOnly] public NativeArray<Entity> ParkingLanes;
         [ReadOnly] public ComponentLookup<ParkingLane> ParkingLaneData;
@@ -40,91 +39,96 @@ namespace ParkingPricing
 
         [WriteOnly] public NativeArray<DistrictUtilizationResult> Results;
 
-        public void Execute(int index)
-        {
+        public void Execute(int index) {
             Entity districtEntity = DistrictEntities[index];
             double totalCapacity = 0;
             double totalOccupied = 0;
 
             // Check all parking lanes to see which belong to this district
-            foreach (var laneEntity in ParkingLanes) {
-                if (!ParkingLaneData.HasComponent(laneEntity) || !OwnerData.HasComponent(laneEntity))
+            foreach (Entity laneEntity in ParkingLanes) {
+                if (!ParkingLaneData.HasComponent(laneEntity) || !OwnerData.HasComponent(laneEntity)) {
                     continue;
+                }
 
-                var parkingLane = ParkingLaneData[laneEntity];
+                ParkingLane parkingLane = ParkingLaneData[laneEntity];
 
                 // Skip virtual lanes
-                if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0)
+                if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0) {
                     continue;
+                }
 
-                var owner = OwnerData[laneEntity];
+                Owner owner = OwnerData[laneEntity];
                 Entity roadEntity = owner.m_Owner;
 
                 // Check if the road has a BorderDistrict component
-                if (!BorderDistrictData.HasComponent(roadEntity))
+                if (!BorderDistrictData.HasComponent(roadEntity)) {
                     continue;
+                }
 
-                var borderDistrict = BorderDistrictData[roadEntity];
+                BorderDistrict borderDistrict = BorderDistrictData[roadEntity];
                 bool leftMatch = borderDistrict.m_Left == districtEntity;
                 bool rightMatch = borderDistrict.m_Right == districtEntity;
 
                 // Only process this lane if it belongs to our district
-                if (leftMatch || rightMatch)
-                {
-                    // Get lane data directly from the lane entity
-                    if (LaneObjectData.HasBuffer(laneEntity) &&
-                        LaneOverlapData.HasBuffer(laneEntity) &&
-                        LaneData.HasComponent(laneEntity))
-                    {
-                        var laneOverlaps = LaneOverlapData[laneEntity];
-                        var laneData = LaneData[laneEntity];
-                        var blockedRange = GetBlockedRange(owner, laneData);
-
-                        int laneCapacity = 0;
-                        int laneOccupied = 0;
-                        GetStreetParkingLaneCapacity(laneEntity, parkingLane, laneOverlaps, blockedRange, ref laneCapacity, ref laneOccupied);
-
-                        // Determine weight based on district ownership
-                        double weight = (leftMatch && rightMatch) ? 1.0 : 0.5;
-                        totalCapacity += laneCapacity * weight;
-                        totalOccupied += laneOccupied * weight;
-                    }
+                if (!leftMatch && !rightMatch) {
+                    continue;
                 }
+
+                if (!LaneObjectData.HasBuffer(laneEntity) || !LaneOverlapData.HasBuffer(laneEntity)
+                                                          || !LaneData.HasComponent(laneEntity)) {
+                    continue;
+                }
+
+                // Get lane data directly from the lane entity
+                DynamicBuffer<LaneOverlap> laneOverlaps = LaneOverlapData[laneEntity];
+                Lane laneData = LaneData[laneEntity];
+                Bounds1 blockedRange = GetBlockedRange(owner, laneData);
+
+                int laneCapacity = 0;
+                int laneOccupied = 0;
+                GetStreetParkingLaneCapacity(
+                    laneEntity, parkingLane, laneOverlaps, blockedRange, ref laneCapacity, ref laneOccupied
+                );
+
+                // Determine weight based on district ownership
+                double weight = leftMatch && rightMatch ? 1.0 : 0.5;
+                totalCapacity += laneCapacity * weight;
+                totalOccupied += laneOccupied * weight;
             }
 
-            Results[index] = new DistrictUtilizationResult
-            {
-                DistrictEntity = districtEntity,
-                Utilization = totalCapacity > 0 ? totalOccupied / totalCapacity : 0.0
+            Results[index] = new DistrictUtilizationResult {
+                DistrictEntity = districtEntity, Utilization = totalCapacity > 0 ? totalOccupied / totalCapacity : 0.0
             };
         }
 
-        private void GetStreetParkingLaneCapacity(Entity subLane, ParkingLane parkingLane, DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange, ref int slotCapacity, ref int parkedCars)
-        {
+        private void GetStreetParkingLaneCapacity(
+            Entity subLane, ParkingLane parkingLane, DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange,
+            ref int slotCapacity, ref int parkedCars
+        ) {
             // Get parking slot count using game's method
-            var prefab = PrefabRefData[subLane].m_Prefab;
-            var curve = CurveData[subLane];
-            var parkingLaneData = ParkingLaneDataComponents[prefab];
-            var laneObjects = LaneObjectData[subLane];
+            Entity prefab = PrefabRefData[subLane].m_Prefab;
+            Curve curve = CurveData[subLane];
+            ParkingLaneData parkingLaneData = ParkingLaneDataComponents[prefab];
+            DynamicBuffer<LaneObject> laneObjects = LaneObjectData[subLane];
 
-            if (parkingLaneData.m_SlotInterval != 0f)
-            {
+            if (parkingLaneData.m_SlotInterval != 0f) {
                 int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
                 slotCapacity += parkingSlotCount;
 
                 // Count parked cars in this lane
-                for (int j = 0; j < laneObjects.Length; j++)
-                {
-                    if (ParkedCarData.HasComponent(laneObjects[j].m_LaneObject))
-                    {
+                foreach (LaneObject laneObject in laneObjects) {
+                    if (ParkedCarData.HasComponent(laneObject.m_LaneObject)) {
                         parkedCars++;
                     }
                 }
+
                 return;
             }
 
             // Complex capacity calculation for lanes without slot intervals
-            float standardCarLength = parkingLaneData.m_MaxCarLength != 0f ? parkingLaneData.m_MaxCarLength : ParkingPricingConstants.STANDARD_CAR_LENGTH;
+            float standardCarLength = parkingLaneData.m_MaxCarLength != 0f
+                ? parkingLaneData.m_MaxCarLength
+                : ParkingPricingConstants.StandardCarLength;
 
             int freeParkingSpaces = 0;
             float2 currentOffsets = math.select(0f, 0.5f, (parkingLane.m_Flags & ParkingLaneFlags.StartingLane) == 0);
@@ -136,15 +140,18 @@ namespace ParkingPricing
             int carIndex = 0;
 
             // Find the first parked car along the curve
-            while (carIndex < laneObjects.Length)
-            {
-                var currentLaneObject = laneObjects[carIndex++];
-                if (ParkedCarData.HasComponent(currentLaneObject.m_LaneObject) && !UnspawnedData.HasComponent(currentLaneObject.m_LaneObject))
-                {
-                    nextCarPosition = currentLaneObject.m_CurvePosition.x;
-                    nextCarOffsets = VehicleUtils.GetParkingOffsets(currentLaneObject.m_LaneObject, ref PrefabRefData, ref ObjectGeometryData) + 1f;
-                    break;
+            while (carIndex < laneObjects.Length) {
+                LaneObject currentLaneObject = laneObjects[carIndex++];
+                if (!ParkedCarData.HasComponent(currentLaneObject.m_LaneObject)
+                    || UnspawnedData.HasComponent(currentLaneObject.m_LaneObject)) {
+                    continue;
                 }
+
+                nextCarPosition = currentLaneObject.m_CurvePosition.x;
+                nextCarOffsets = VehicleUtils.GetParkingOffsets(
+                    currentLaneObject.m_LaneObject, ref PrefabRefData, ref ObjectGeometryData
+                ) + 1f;
+                break;
             }
 
             // Initialize variables for tracking lane overlaps (intersections, etc.)
@@ -152,32 +159,33 @@ namespace ParkingPricing
             int overlapIndex = 0;
 
             // Find the first lane overlap
-            if (overlapIndex < laneOverlaps.Length)
-            {
-                var currentOverlap = laneOverlaps[overlapIndex++];
-                nextOverlapRange = new float2(currentOverlap.m_ThisStart, currentOverlap.m_ThisEnd) * ParkingPricingConstants.LANE_POSITION_MULTIPLIER;
+            if (overlapIndex < laneOverlaps.Length) {
+                LaneOverlap currentOverlap = laneOverlaps[overlapIndex++];
+                nextOverlapRange = new float2(currentOverlap.m_ThisStart, currentOverlap.m_ThisEnd)
+                                   * ParkingPricingConstants.LanePositionMultiplier;
             }
 
             // Initialize variables for handling blocked ranges (areas where parking is prohibited)
-            float3 blockedCenterPosition = default(float3);
-            float3 blockedDistances = default(float3);
-            if (blockedRange.max >= blockedRange.min)
-            {
+            var blockedCenterPosition = default(float3);
+            var blockedDistances = default(float3);
+            if (blockedRange.max >= blockedRange.min) {
                 blockedCenterPosition = MathUtils.Position(curve.m_Bezier, MathUtils.Center(blockedRange));
-                blockedDistances.x = math.distance(MathUtils.Position(curve.m_Bezier, blockedRange.min), blockedCenterPosition);
-                blockedDistances.y = math.distance(MathUtils.Position(curve.m_Bezier, blockedRange.max), blockedCenterPosition);
+                blockedDistances.x = math.distance(
+                    MathUtils.Position(curve.m_Bezier, blockedRange.min), blockedCenterPosition
+                );
+                blockedDistances.y = math.distance(
+                    MathUtils.Position(curve.m_Bezier, blockedRange.max), blockedCenterPosition
+                );
             }
 
             // Main loop: iterate through all obstacles (cars and overlaps) along the curve
             float segmentLength;
-            while (nextCarPosition != 2f || nextOverlapRange.x != 2f)
-            {
+            while (!Mathf.Approximately(nextCarPosition, 2f) || !Mathf.Approximately(nextOverlapRange.x, 2f)) {
                 float2 obstacleRange;
                 float nextObstacleEndOffset;
 
                 // Determine which obstacle comes first: parked car or lane overlap
-                if (nextCarPosition <= nextOverlapRange.x)
-                {
+                if (nextCarPosition <= nextOverlapRange.x) {
                     // Process parked car obstacle
                     obstacleRange = nextCarPosition;
                     currentOffsets.y = nextCarOffsets.x;
@@ -185,19 +193,20 @@ namespace ParkingPricing
                     nextCarPosition = 2f; // Reset to indicate no more cars until we find the next one
 
                     // Find next parked car
-                    while (carIndex < laneObjects.Length)
-                    {
-                        var nextLaneObject = laneObjects[carIndex++];
-                        if (ParkedCarData.HasComponent(nextLaneObject.m_LaneObject) && !UnspawnedData.HasComponent(nextLaneObject.m_LaneObject))
-                        {
-                            nextCarPosition = nextLaneObject.m_CurvePosition.x;
-                            nextCarOffsets = VehicleUtils.GetParkingOffsets(nextLaneObject.m_LaneObject, ref PrefabRefData, ref ObjectGeometryData) + 1f;
-                            break;
+                    while (carIndex < laneObjects.Length) {
+                        LaneObject nextLaneObject = laneObjects[carIndex++];
+                        if (!ParkedCarData.HasComponent(nextLaneObject.m_LaneObject)
+                            || UnspawnedData.HasComponent(nextLaneObject.m_LaneObject)) {
+                            continue;
                         }
+
+                        nextCarPosition = nextLaneObject.m_CurvePosition.x;
+                        nextCarOffsets = VehicleUtils.GetParkingOffsets(
+                            nextLaneObject.m_LaneObject, ref PrefabRefData, ref ObjectGeometryData
+                        ) + 1f;
+                        break;
                     }
-                }
-                else
-                {
+                } else {
                     // Process lane overlap obstacle
                     obstacleRange = nextOverlapRange;
                     currentOffsets.y = 0.5f;
@@ -205,16 +214,16 @@ namespace ParkingPricing
                     nextOverlapRange = 2f; // Reset to indicate no more overlaps until we find the next one
 
                     // Find next lane overlap, merging consecutive overlaps
-                    while (overlapIndex < laneOverlaps.Length)
-                    {
-                        var nextOverlap = laneOverlaps[overlapIndex++];
-                        float2 nextOverlapNormalized = new float2(nextOverlap.m_ThisStart, nextOverlap.m_ThisEnd) * ParkingPricingConstants.LANE_POSITION_MULTIPLIER;
-                        if (nextOverlapNormalized.x <= obstacleRange.y)
-                        {
+                    while (overlapIndex < laneOverlaps.Length) {
+                        LaneOverlap nextOverlap = laneOverlaps[overlapIndex++];
+                        float2 nextOverlapNormalized = new float2(nextOverlap.m_ThisStart, nextOverlap.m_ThisEnd)
+                                                       * ParkingPricingConstants.LanePositionMultiplier;
+                        if (nextOverlapNormalized.x <= obstacleRange.y) {
                             // Merge consecutive overlaps
                             obstacleRange.y = math.max(obstacleRange.y, nextOverlapNormalized.y);
                             continue;
                         }
+
                         nextOverlapRange = nextOverlapNormalized;
                         break;
                     }
@@ -225,16 +234,16 @@ namespace ParkingPricing
                 segmentLength = math.distance(currentPosition, segmentEndPosition) - math.csum(currentOffsets);
 
                 // Adjust for blocked ranges if they affect this segment
-                if (blockedRange.max >= blockedRange.min)
-                {
-                    float distanceToBlockedStart = math.distance(currentPosition, blockedCenterPosition) - currentOffsets.x - blockedDistances.x;
-                    float distanceToBlockedEnd = math.distance(segmentEndPosition, blockedCenterPosition) - currentOffsets.y - blockedDistances.y;
+                if (blockedRange.max >= blockedRange.min) {
+                    float distanceToBlockedStart = math.distance(currentPosition, blockedCenterPosition)
+                                                   - currentOffsets.x - blockedDistances.x;
+                    float distanceToBlockedEnd = math.distance(segmentEndPosition, blockedCenterPosition)
+                                                 - currentOffsets.y - blockedDistances.y;
                     segmentLength = math.min(segmentLength, math.max(distanceToBlockedStart, distanceToBlockedEnd));
                 }
 
                 // Calculate how many cars can fit in this segment and add to total
-                if (segmentLength > 0)
-                {
+                if (segmentLength > 0) {
                     int spacesInSegment = (int)math.floor(segmentLength / standardCarLength);
                     freeParkingSpaces += spacesInSegment;
                 }
@@ -249,16 +258,16 @@ namespace ParkingPricing
             segmentLength = math.distance(currentPosition, curve.m_Bezier.d) - math.csum(currentOffsets);
 
             // Adjust final segment for blocked ranges
-            if (blockedRange.max >= blockedRange.min)
-            {
-                float distanceToBlockedStart = math.distance(currentPosition, blockedCenterPosition) - currentOffsets.x - blockedDistances.x;
-                float distanceToBlockedEnd = math.distance(curve.m_Bezier.d, blockedCenterPosition) - currentOffsets.y - blockedDistances.y;
+            if (blockedRange.max >= blockedRange.min) {
+                float distanceToBlockedStart = math.distance(currentPosition, blockedCenterPosition) - currentOffsets.x
+                    - blockedDistances.x;
+                float distanceToBlockedEnd = math.distance(curve.m_Bezier.d, blockedCenterPosition) - currentOffsets.y
+                    - blockedDistances.y;
                 segmentLength = math.min(segmentLength, math.max(distanceToBlockedStart, distanceToBlockedEnd));
             }
 
             // Calculate spaces in the final segment and add to total
-            if (segmentLength > 0)
-            {
+            if (segmentLength > 0) {
                 int spacesInFinalSegment = (int)math.floor(segmentLength / standardCarLength);
                 freeParkingSpaces += spacesInFinalSegment;
             }
@@ -270,37 +279,45 @@ namespace ParkingPricing
             parkedCars += laneObjects.Length;
         }
 
-        private Bounds1 GetBlockedRange(Owner owner, Lane laneData)
-        {
-            Bounds1 result = new Bounds1(2f, -1f);
-            if (SubLanes.HasBuffer(owner.m_Owner))
-            {
-                var dynamicBuffer = SubLanes[owner.m_Owner];
-                for (int i = 0; i < dynamicBuffer.Length; i++)
-                {
-                    Entity subLane = dynamicBuffer[i].m_SubLane;
-                    Lane lane = LaneData[subLane];
-                    if (laneData.m_StartNode.EqualsIgnoreCurvePos(lane.m_MiddleNode) && CarLaneData.HasComponent(subLane))
-                    {
-                        var carLane = CarLaneData[subLane];
-                        if (carLane.m_BlockageEnd >= carLane.m_BlockageStart)
-                        {
-                            Bounds1 blockageBounds = carLane.blockageBounds;
-                            blockageBounds.min = math.select(blockageBounds.min - ParkingPricingConstants.BLOCKED_RANGE_BUFFER, 0f, blockageBounds.min <= ParkingPricingConstants.LANE_BOUNDARY_INVERSE_THRESHOLD);
-                            blockageBounds.max = math.select(blockageBounds.max + ParkingPricingConstants.BLOCKED_RANGE_BUFFER, 1f, blockageBounds.max >= ParkingPricingConstants.LANE_BOUNDARY_THRESHOLD);
-                            result |= blockageBounds;
-                        }
-                    }
-                }
+        private Bounds1 GetBlockedRange(Owner owner, Lane laneData) {
+            var result = new Bounds1(2f, -1f);
+            if (!SubLanes.HasBuffer(owner.m_Owner)) {
+                return result;
             }
+
+            DynamicBuffer<SubLane> dynamicBuffer = SubLanes[owner.m_Owner];
+            for (int i = 0; i < dynamicBuffer.Length; i++) {
+                Entity subLane = dynamicBuffer[i].m_SubLane;
+                Lane lane = LaneData[subLane];
+                if (!laneData.m_StartNode.EqualsIgnoreCurvePos(lane.m_MiddleNode)
+                    || !CarLaneData.HasComponent(subLane)) {
+                    continue;
+                }
+
+                CarLane carLane = CarLaneData[subLane];
+                if (carLane.m_BlockageEnd < carLane.m_BlockageStart) {
+                    continue;
+                }
+
+                Bounds1 blockageBounds = carLane.blockageBounds;
+                blockageBounds.min = math.select(
+                    blockageBounds.min - ParkingPricingConstants.BlockedRangeBuffer, 0f,
+                    blockageBounds.min <= ParkingPricingConstants.LaneBoundaryInverseThreshold
+                );
+                blockageBounds.max = math.select(
+                    blockageBounds.max + ParkingPricingConstants.BlockedRangeBuffer, 1f,
+                    blockageBounds.max >= ParkingPricingConstants.LaneBoundaryThreshold
+                );
+                result |= blockageBounds;
+            }
+
             return result;
         }
     }
 
     // Job for calculating building utilization in parallel
     [BurstCompile]
-    public struct CalculateBuildingUtilizationJob : IJobParallelFor
-    {
+    public struct CalculateBuildingUtilizationJob : IJobParallelFor {
         [ReadOnly] public NativeArray<Entity> BuildingEntities;
         [ReadOnly] public NativeArray<Entity> ParkingLanes;
         [ReadOnly] public NativeArray<Entity> GarageLanes;
@@ -316,89 +333,88 @@ namespace ParkingPricing
 
         [WriteOnly] public NativeArray<BuildingUtilizationResult> Results;
 
-        public void Execute(int index)
-        {
+        public void Execute(int index) {
             Entity buildingEntity = BuildingEntities[index];
             int slotCapacity = 0;
             int parkedCars = 0;
 
             // Check parking lanes that belong to this building
-            foreach (var laneEntity in ParkingLanes) {
-                if (DoesLaneBelongToBuilding(laneEntity, buildingEntity))
-                {
-                    if (ParkingLaneData.HasComponent(laneEntity))
-                    {
-                        var parkingLane = ParkingLaneData[laneEntity];
-
-                        // Skip virtual lanes
-                        if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0)
-                            continue;
-
-                        GetBuildingParkingLaneCounts(laneEntity, parkingLane, ref slotCapacity, ref parkedCars);
-                    }
+            foreach (Entity laneEntity in ParkingLanes) {
+                if (!DoesLaneBelongToBuilding(laneEntity, buildingEntity)) {
+                    continue;
                 }
+
+                if (!ParkingLaneData.HasComponent(laneEntity)) {
+                    continue;
+                }
+
+                ParkingLane parkingLane = ParkingLaneData[laneEntity];
+
+                // Skip virtual lanes
+                if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0) {
+                    continue;
+                }
+
+                GetBuildingParkingLaneCounts(laneEntity, parkingLane, ref slotCapacity, ref parkedCars);
             }
 
             // Check garage lanes that belong to this building
-            foreach (var laneEntity in GarageLanes) {
-                if (DoesLaneBelongToBuilding(laneEntity, buildingEntity))
-                {
-                    if (GarageLaneData.HasComponent(laneEntity))
-                    {
-                        var garageLane = GarageLaneData[laneEntity];
-                        slotCapacity += garageLane.m_VehicleCapacity;
-                        parkedCars += garageLane.m_VehicleCount;
-                    }
+            foreach (Entity laneEntity in GarageLanes) {
+                if (!DoesLaneBelongToBuilding(laneEntity, buildingEntity)) {
+                    continue;
                 }
+
+                if (!GarageLaneData.HasComponent(laneEntity)) {
+                    continue;
+                }
+
+                GarageLane garageLane = GarageLaneData[laneEntity];
+                slotCapacity += garageLane.m_VehicleCapacity;
+                parkedCars += garageLane.m_VehicleCount;
             }
 
-            Results[index] = new BuildingUtilizationResult
-            {
+            Results[index] = new BuildingUtilizationResult {
                 BuildingEntity = buildingEntity,
                 Utilization = slotCapacity > 0 ? (double)parkedCars / slotCapacity : 0.0
             };
         }
 
-        private void GetBuildingParkingLaneCounts(Entity subLane, ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars)
-        {
+        private void GetBuildingParkingLaneCounts(
+            Entity subLane, ParkingLane parkingLane, ref int slotCapacity, ref int parkedCars
+        ) {
             // Get parking slot count using game's method
             Entity prefab = PrefabRefData[subLane].m_Prefab;
             Curve curve = CurveData[subLane];
-            var parkingLaneData = ParkingLaneDataComponents[prefab];
+            ParkingLaneData parkingLaneData = ParkingLaneDataComponents[prefab];
 
-            if (parkingLaneData.m_SlotInterval != 0f)
-            {
+            if (parkingLaneData.m_SlotInterval != 0f) {
                 int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
                 slotCapacity += parkingSlotCount;
             }
 
+            if (!LaneObjectData.HasBuffer(subLane)) {
+                return;
+            }
+
             // Count parked cars in this lane
-            if (LaneObjectData.HasBuffer(subLane))
-            {
-                var laneObjects = LaneObjectData[subLane];
-                for (int j = 0; j < laneObjects.Length; j++)
-                {
-                    if (ParkedCarData.HasComponent(laneObjects[j].m_LaneObject))
-                    {
-                        parkedCars++;
-                    }
+            DynamicBuffer<LaneObject> laneObjects = LaneObjectData[subLane];
+            for (int j = 0; j < laneObjects.Length; j++) {
+                if (ParkedCarData.HasComponent(laneObjects[j].m_LaneObject)) {
+                    parkedCars++;
                 }
             }
         }
 
-        private bool DoesLaneBelongToBuilding(Entity laneEntity, Entity targetBuilding)
-        {
+        private bool DoesLaneBelongToBuilding(Entity laneEntity, Entity targetBuilding) {
             Entity currentEntity = laneEntity;
             int depth = 0;
 
-            while (depth < ParkingPricingConstants.MAX_OWNERSHIP_DEPTH && OwnerData.HasComponent(currentEntity))
-            {
-                var owner = OwnerData[currentEntity];
+            while (depth < ParkingPricingConstants.MaxOwnershipDepth && OwnerData.HasComponent(currentEntity)) {
+                Owner owner = OwnerData[currentEntity];
                 currentEntity = owner.m_Owner;
 
                 // Check if current entity is a building
-                if (BuildingData.HasComponent(currentEntity))
-                {
+                if (BuildingData.HasComponent(currentEntity)) {
                     return currentEntity == targetBuilding;
                 }
 
@@ -411,8 +427,7 @@ namespace ParkingPricing
 
     // Job for applying price updates to entities using EntityCommandBuffer for immediate application
     [BurstCompile]
-    public struct ApplyPricingWithECBJob : IJob
-    {
+    public struct ApplyPricingWithECBJob : IJob {
         [ReadOnly] public NativeArray<DistrictUtilizationResult> DistrictResults;
         [ReadOnly] public NativeArray<BuildingUtilizationResult> BuildingResults;
         [ReadOnly] public int BaseStreetPrice;
@@ -428,40 +443,45 @@ namespace ParkingPricing
 
         public void Execute() {
             // Process district results
-            foreach (var result in DistrictResults) {
+            foreach (DistrictUtilizationResult result in DistrictResults) {
                 int newPrice = PricingCalculator.CalculateAdjustedPrice(
-                    BaseStreetPrice, MaxStreetPrice, MinStreetPrice, result.Utilization);
+                    BaseStreetPrice, MaxStreetPrice, MinStreetPrice, result.Utilization
+                );
 
                 // Use ECB to schedule policy update
-                EntityCommandBuffer.AddComponent(result.DistrictEntity, new PolicyUpdateCommand
-                {
-                    PolicyPrefab = StreetParkingFeePrefab,
-                    NewPrice = newPrice,
-                    IsDistrict = true,
-                    Utilization = result.Utilization
-                });
+                EntityCommandBuffer.AddComponent(
+                    result.DistrictEntity,
+                    new PolicyUpdateCommand {
+                        PolicyPrefab = StreetParkingFeePrefab,
+                        NewPrice = newPrice,
+                        IsDistrict = true,
+                        Utilization = result.Utilization
+                    }
+                );
             }
 
             // Process building results
-            foreach (var result in BuildingResults) {
+            foreach (BuildingUtilizationResult result in BuildingResults) {
                 int newPrice = PricingCalculator.CalculateAdjustedPrice(
-                    BaseLotPrice, MaxLotPrice, MinLotPrice, result.Utilization);
+                    BaseLotPrice, MaxLotPrice, MinLotPrice, result.Utilization
+                );
 
                 // Use ECB to schedule policy update
-                EntityCommandBuffer.AddComponent(result.BuildingEntity, new PolicyUpdateCommand
-                {
-                    PolicyPrefab = LotParkingFeePrefab,
-                    NewPrice = newPrice,
-                    IsDistrict = false,
-                    Utilization = result.Utilization
-                });
+                EntityCommandBuffer.AddComponent(
+                    result.BuildingEntity,
+                    new PolicyUpdateCommand {
+                        PolicyPrefab = LotParkingFeePrefab,
+                        NewPrice = newPrice,
+                        IsDistrict = false,
+                        Utilization = result.Utilization
+                    }
+                );
             }
         }
     }
 
     // Component to signal a policy update request
-    public struct PolicyUpdateCommand : IComponentData
-    {
+    public struct PolicyUpdateCommand : IComponentData {
         public Entity PolicyPrefab;
         public int NewPrice;
         public bool IsDistrict;
@@ -469,72 +489,15 @@ namespace ParkingPricing
     }
 
     // Job for applying price updates to entities
-    [BurstCompile]
-    public struct ApplyPricingUpdatesJob : IJob
-    {
-        [ReadOnly] public NativeArray<DistrictUtilizationResult> DistrictResults;
-        [ReadOnly] public NativeArray<BuildingUtilizationResult> BuildingResults;
-        [ReadOnly] public int BaseStreetPrice;
-        [ReadOnly] public int MaxStreetPrice;
-        [ReadOnly] public int MinStreetPrice;
-        [ReadOnly] public int BaseLotPrice;
-        [ReadOnly] public int MaxLotPrice;
-        [ReadOnly] public int MinLotPrice;
-
-        [WriteOnly] public NativeArray<PricingUpdate> PricingUpdates;
-
-        public void Execute()
-        {
-            int updateIndex = 0;
-
-            // Process district results
-            foreach (var result in DistrictResults) {
-                int newPrice = PricingCalculator.CalculateAdjustedPrice(
-                    BaseStreetPrice, MaxStreetPrice, MinStreetPrice, result.Utilization);
-
-                PricingUpdates[updateIndex++] = new PricingUpdate
-                {
-                    Entity = result.DistrictEntity,
-                    NewPrice = newPrice,
-                    IsDistrict = true,
-                    Utilization = result.Utilization
-                };
-            }
-
-            // Process building results
-            foreach (var result in BuildingResults) {
-                int newPrice = PricingCalculator.CalculateAdjustedPrice(
-                    BaseLotPrice, MaxLotPrice, MinLotPrice, result.Utilization);
-
-                PricingUpdates[updateIndex++] = new PricingUpdate
-                {
-                    Entity = result.BuildingEntity,
-                    NewPrice = newPrice,
-                    IsDistrict = false,
-                    Utilization = result.Utilization
-                };
-            }
-        }
-    }
 
     // Result structures for job communication
-    public struct DistrictUtilizationResult
-    {
+    public struct DistrictUtilizationResult {
         public Entity DistrictEntity;
         public double Utilization;
     }
 
-    public struct BuildingUtilizationResult
-    {
+    public struct BuildingUtilizationResult {
         public Entity BuildingEntity;
-        public double Utilization;
-    }
-
-    public struct PricingUpdate
-    {
-        public Entity Entity;
-        public int NewPrice;
-        public bool IsDistrict;
         public double Utilization;
     }
 }

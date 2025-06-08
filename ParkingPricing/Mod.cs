@@ -3,35 +3,35 @@ using Game;
 using Game.Modding;
 using Game.SceneFlow;
 
-namespace ParkingPricing
-{
-    public class Mod : IMod
-    {
-        public static ModSettings m_Setting;
+namespace ParkingPricing {
+    public class Mod : IMod {
+        public static ModSettings Setting;
 
-        public void OnLoad(UpdateSystem updateSystem)
-        {
+        public void OnLoad(UpdateSystem updateSystem) {
             LogUtil.Info(nameof(OnLoad));
 
-            if (GameManager.instance.modManager.TryGetExecutableAsset(this, out var asset))
+            if (GameManager.instance.modManager.TryGetExecutableAsset(this, out ExecutableAsset asset)) {
                 LogUtil.Info($"Current mod asset at {asset.path}");
+            }
 
-            m_Setting = new ModSettings(this);
-            m_Setting.RegisterInOptionsUI();
-            GameManager.instance.localizationManager.AddSource("en-US", new LocaleEN(m_Setting));
+            Setting = new ModSettings(this);
+            Setting.RegisterInOptionsUI();
+            GameManager.instance.localizationManager.AddSource("en-US", new LocaleEN(Setting));
 
-            AssetDatabase.global.LoadSettings(nameof(ParkingPricing), m_Setting, new ModSettings(this));
+            AssetDatabase.global.LoadSettings(nameof(ParkingPricing), Setting, new ModSettings(this));
 
             updateSystem.UpdateAt<ParkingPricingSystem>(SystemUpdatePhase.GameSimulation);
             updateSystem.UpdateAt<PolicyUpdateSystem>(SystemUpdatePhase.GameSimulation);
         }
 
-        public void OnDispose()
-        {
+        public void OnDispose() {
             LogUtil.Info(nameof(OnDispose));
-            if (m_Setting == null) return;
-            m_Setting.UnregisterInOptionsUI();
-            m_Setting = null;
+            if (Setting == null) {
+                return;
+            }
+
+            Setting.UnregisterInOptionsUI();
+            Setting = null;
         }
     }
 }
