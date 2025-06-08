@@ -127,7 +127,10 @@ namespace ParkingPricing
         public override int GetUpdateInterval(SystemUpdatePhase phase)
         {
             if (Mod.m_Setting == null)
-                return ParkingPricingConstants.GAME_TICKS_PER_DAY;
+            {
+                LogUtil.Warn("Failed to load mod settings");
+                return ParkingPricingConstants.GAME_TICKS_PER_DAY / 45;
+            }
 
             return ParkingPricingConstants.GAME_TICKS_PER_DAY / (int)Mod.m_Setting.updateFreq;
         }
