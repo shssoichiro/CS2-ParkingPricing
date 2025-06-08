@@ -412,6 +412,70 @@ namespace ParkingPricing
         }
     }
 
+    // Job for applying price updates to entities using EntityCommandBuffer for immediate application
+    [BurstCompile]
+    public struct ApplyPricingWithECBJob : IJob
+    {
+        [ReadOnly] public NativeArray<DistrictUtilizationResult> DistrictResults;
+        [ReadOnly] public NativeArray<BuildingUtilizationResult> BuildingResults;
+        [ReadOnly] public int BaseStreetPrice;
+        [ReadOnly] public int MaxStreetPrice;
+        [ReadOnly] public int MinStreetPrice;
+        [ReadOnly] public int BaseLotPrice;
+        [ReadOnly] public int MaxLotPrice;
+        [ReadOnly] public int MinLotPrice;
+        [ReadOnly] public Entity StreetParkingFeePrefab;
+        [ReadOnly] public Entity LotParkingFeePrefab;
+
+        public EntityCommandBuffer EntityCommandBuffer;
+
+        public void Execute()
+        {
+            // Process district results
+            for (int i = 0; i < DistrictResults.Length; i++)
+            {
+                var result = DistrictResults[i];
+                int newPrice = PricingCalculator.CalculateAdjustedPrice(
+                    BaseStreetPrice, MaxStreetPrice, MinStreetPrice, result.Utilization);
+
+                // Use ECB to schedule policy update
+                EntityCommandBuffer.AddComponent(result.DistrictEntity, new PolicyUpdateCommand
+                {
+                    PolicyPrefab = StreetParkingFeePrefab,
+                    NewPrice = newPrice,
+                    IsDistrict = true,
+                    Utilization = result.Utilization
+                });
+            }
+
+            // Process building results
+            for (int i = 0; i < BuildingResults.Length; i++)
+            {
+                var result = BuildingResults[i];
+                int newPrice = PricingCalculator.CalculateAdjustedPrice(
+                    BaseLotPrice, MaxLotPrice, MinLotPrice, result.Utilization);
+
+                // Use ECB to schedule policy update
+                EntityCommandBuffer.AddComponent(result.BuildingEntity, new PolicyUpdateCommand
+                {
+                    PolicyPrefab = LotParkingFeePrefab,
+                    NewPrice = newPrice,
+                    IsDistrict = false,
+                    Utilization = result.Utilization
+                });
+            }
+        }
+    }
+
+    // Component to signal a policy update request
+    public struct PolicyUpdateCommand : IComponentData
+    {
+        public Entity PolicyPrefab;
+        public int NewPrice;
+        public bool IsDistrict;
+        public double Utilization;
+    }
+
     // Job for applying price updates to entities
     [BurstCompile]
     public struct ApplyPricingUpdatesJob : IJob

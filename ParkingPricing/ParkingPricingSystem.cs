@@ -6,6 +6,7 @@ using Game.Net;
 using Game.Policies;
 using Game.Prefabs;
 using Game.Buildings;
+using Game.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
@@ -14,6 +15,73 @@ using Game.Objects;
 
 namespace ParkingPricing
 {
+    // System to process policy update commands immediately after ECB playback
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(EndSimulationEntityCommandBufferSystem))]
+    public partial class PolicyUpdateSystem : GameSystemBase
+    {
+        private PolicyManager m_PolicyManager;
+        private EntityQuery m_PolicyUpdateQuery;
+
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+            m_PolicyManager = new PolicyManager(EntityManager);
+            m_PolicyUpdateQuery = GetEntityQuery(ComponentType.ReadOnly<PolicyUpdateCommand>());
+        }
+
+        protected override void OnUpdate()
+        {
+            if (m_PolicyUpdateQuery.IsEmpty) return;
+
+            int appliedUpdates = 0;
+            var policyUpdateCommands = m_PolicyUpdateQuery.ToComponentDataArray<PolicyUpdateCommand>(Allocator.Temp);
+            var entities = m_PolicyUpdateQuery.ToEntityArray(Allocator.Temp);
+
+            try
+            {
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    var entity = entities[i];
+                    var command = policyUpdateCommands[i];
+
+                    try
+                    {
+                        // Remove the command component
+                        EntityManager.RemoveComponent<PolicyUpdateCommand>(entity);
+
+                        // Apply the policy update
+                        m_PolicyManager.UpdateOrAddPolicy(entity, command.PolicyPrefab, command.NewPrice);
+
+                        if (command.IsDistrict)
+                        {
+                            LogUtil.Info($"Updated street parking policy for district {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})");
+                        }
+                        else
+                        {
+                            LogUtil.Info($"Updated parking policy for building {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})");
+                        }
+                        appliedUpdates++;
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUtil.Error($"Failed to apply pricing update to entity {entity.Index}: {ex.Message}");
+                    }
+                }
+
+                if (appliedUpdates > 0)
+                {
+                    LogUtil.Info($"Applied {appliedUpdates} pricing updates immediately via ECB");
+                }
+            }
+            finally
+            {
+                policyUpdateCommands.Dispose();
+                entities.Dispose();
+            }
+        }
+    }
+
     // Main system class now focused on coordination and ECS management
     public partial class ParkingPricingSystem : GameSystemBase
     {
@@ -47,16 +115,11 @@ namespace ParkingPricing
         private Entity m_LotParkingFeePrefab;
         private Entity m_StreetParkingFeePrefab;
 
+        // Entity Command Buffer System for immediate updates
+        private EndSimulationEntityCommandBufferSystem m_EndSimulationECBSystem;
+
         // Extracted components
         private PolicyManager m_PolicyManager;
-
-        // Job system state
-        private JobHandle m_PreviousJobHandle;
-        private bool m_JobInProgress;
-        private NativeArray<DistrictUtilizationResult> m_DistrictResults;
-        private NativeArray<BuildingUtilizationResult> m_BuildingResults;
-        private NativeArray<PricingUpdate> m_PricingUpdates;
-        private bool m_HasPendingUpdates;
 
         protected override void OnCreate()
         {
@@ -69,6 +132,9 @@ namespace ParkingPricing
             // Initialize cached prefab entities
             m_LotParkingFeePrefab = Entity.Null;
             m_StreetParkingFeePrefab = Entity.Null;
+
+            // Initialize ECB system for immediate updates
+            m_EndSimulationECBSystem = World.GetOrCreateSystemManaged<EndSimulationEntityCommandBufferSystem>();
 
             // Initialize extracted components
             m_PolicyManager = new PolicyManager(EntityManager);
@@ -194,31 +260,7 @@ namespace ParkingPricing
                 return;
             }
 
-            // Check if previous job is complete
-            if (m_JobInProgress)
-            {
-                if (m_PreviousJobHandle.IsCompleted)
-                {
-                    m_PreviousJobHandle.Complete();
-                    m_JobInProgress = false;
-
-                    // Apply pending updates on main thread
-                    if (m_HasPendingUpdates)
-                    {
-                        ApplyPendingUpdates();
-                        m_HasPendingUpdates = false;
-                    }
-
-                    LogUtil.Info("Async parking pricing update completed");
-                }
-                else
-                {
-                    // Job still running, skip this frame
-                    return;
-                }
-            }
-
-            // Start new async update
+            // Start async update with immediate application via ECB
             try
             {
                 UpdateComponentHandles();
@@ -241,8 +283,8 @@ namespace ParkingPricing
             if (!enableStreet && !enableLot)
                 return;
 
-            // Dispose previous arrays if they exist
-            DisposeJobArrays();
+            // Get ECB from the system for immediate updates
+            var ecb = m_EndSimulationECBSystem.CreateCommandBuffer();
 
             // Get entities to process
             var districtEntities = enableStreet ? m_DistrictQuery.ToEntityArray(Allocator.TempJob) : new NativeArray<Entity>(0, Allocator.TempJob);
@@ -251,9 +293,8 @@ namespace ParkingPricing
             var garageLanes = m_GarageLaneQuery.ToEntityArray(Allocator.TempJob);
 
             // Prepare result arrays
-            m_DistrictResults = new NativeArray<DistrictUtilizationResult>(districtEntities.Length, Allocator.TempJob);
-            m_BuildingResults = new NativeArray<BuildingUtilizationResult>(buildingEntities.Length, Allocator.TempJob);
-            m_PricingUpdates = new NativeArray<PricingUpdate>(districtEntities.Length + buildingEntities.Length, Allocator.TempJob);
+            var districtResults = new NativeArray<DistrictUtilizationResult>(districtEntities.Length, Allocator.TempJob);
+            var buildingResults = new NativeArray<BuildingUtilizationResult>(buildingEntities.Length, Allocator.TempJob);
 
             JobHandle combinedJobHandle = default;
 
@@ -278,7 +319,7 @@ namespace ParkingPricing
                     ObjectGeometryData = GetComponentLookup<ObjectGeometryData>(true),
                     SubLanes = GetBufferLookup<Game.Net.SubLane>(true),
                     CarLaneData = GetComponentLookup<Game.Net.CarLane>(true),
-                    Results = m_DistrictResults
+                    Results = districtResults
                 };
 
                 var districtJobHandle = districtJob.Schedule(districtEntities.Length, 1, default);
@@ -302,31 +343,36 @@ namespace ParkingPricing
                     CurveData = GetComponentLookup<Curve>(true),
                     ParkingLaneDataComponents = GetComponentLookup<ParkingLaneData>(true),
                     ParkedCarData = GetComponentLookup<ParkedCar>(true),
-                    Results = m_BuildingResults
+                    Results = buildingResults
                 };
 
                 var buildingJobHandle = buildingJob.Schedule(buildingEntities.Length, 1, default);
                 combinedJobHandle = JobHandle.CombineDependencies(combinedJobHandle, buildingJobHandle);
             }
 
-            // Schedule pricing calculation job
+            // Schedule immediate pricing application job with ECB
             if (districtEntities.Length > 0 || buildingEntities.Length > 0)
             {
-                var pricingJob = new ApplyPricingUpdatesJob
+                var applyPricingJob = new ApplyPricingWithECBJob
                 {
-                    DistrictResults = m_DistrictResults,
-                    BuildingResults = m_BuildingResults,
+                    DistrictResults = districtResults,
+                    BuildingResults = buildingResults,
                     BaseStreetPrice = settings.standard_price_street,
                     MaxStreetPrice = PricingCalculator.CalculateMaxPrice(settings.standard_price_street, settings.max_price_increase_street / 100.0),
                     MinStreetPrice = PricingCalculator.CalculateMinPrice(settings.standard_price_street, settings.max_price_discount_street / 100.0),
                     BaseLotPrice = settings.standard_price_lot,
                     MaxLotPrice = PricingCalculator.CalculateMaxPrice(settings.standard_price_lot, settings.max_price_increase_lot / 100.0),
                     MinLotPrice = PricingCalculator.CalculateMinPrice(settings.standard_price_lot, settings.max_price_discount_lot / 100.0),
-                    PricingUpdates = m_PricingUpdates
+                    StreetParkingFeePrefab = m_StreetParkingFeePrefab,
+                    LotParkingFeePrefab = m_LotParkingFeePrefab,
+                    EntityCommandBuffer = ecb
                 };
 
-                var pricingJobHandle = pricingJob.Schedule(combinedJobHandle);
-                combinedJobHandle = pricingJobHandle;
+                var applyJobHandle = applyPricingJob.Schedule(combinedJobHandle);
+                combinedJobHandle = applyJobHandle;
+
+                // Register the job with the ECB system for completion and playback
+                m_EndSimulationECBSystem.AddJobHandleForProducer(combinedJobHandle);
             }
 
             // Dispose input arrays (they're no longer needed after scheduling)
@@ -334,10 +380,6 @@ namespace ParkingPricing
             buildingEntities.Dispose();
             parkingLanes.Dispose();
             garageLanes.Dispose();
-
-            m_PreviousJobHandle = combinedJobHandle;
-            m_JobInProgress = true;
-            m_HasPendingUpdates = true;
         }
 
         private NativeArray<Entity> GetBuildingsWithParkingPolicy()
@@ -367,51 +409,6 @@ namespace ParkingPricing
             return result;
         }
 
-        private void ApplyPendingUpdates()
-        {
-            if (!m_PricingUpdates.IsCreated)
-                return;
-
-            int appliedUpdates = 0;
-
-            for (int i = 0; i < m_PricingUpdates.Length; i++)
-            {
-                var update = m_PricingUpdates[i];
-
-                if (update.Entity == Entity.Null)
-                    continue;
-
-                try
-                {
-                    if (update.IsDistrict)
-                    {
-                        m_PolicyManager.UpdateOrAddPolicy(update.Entity, m_StreetParkingFeePrefab, update.NewPrice);
-                        LogUtil.Info($"Updated street parking policy for district {update.Entity.Index}: ${update.NewPrice} (Utilization: {update.Utilization:P2})");
-                    }
-                    else
-                    {
-                        m_PolicyManager.UpdateOrAddPolicy(update.Entity, m_LotParkingFeePrefab, update.NewPrice);
-                        LogUtil.Info($"Updated parking policy for building {update.Entity.Index}: ${update.NewPrice} (Utilization: {update.Utilization:P2})");
-                    }
-                    appliedUpdates++;
-                }
-                catch (Exception ex)
-                {
-                    LogUtil.Error($"Failed to apply pricing update to entity {update.Entity.Index}: {ex.Message}");
-                }
-            }
-
-            LogUtil.Info($"Applied {appliedUpdates} pricing updates");
-            DisposeJobArrays();
-        }
-
-        private void DisposeJobArrays()
-        {
-            if (m_DistrictResults.IsCreated) m_DistrictResults.Dispose();
-            if (m_BuildingResults.IsCreated) m_BuildingResults.Dispose();
-            if (m_PricingUpdates.IsCreated) m_PricingUpdates.Dispose();
-        }
-
         private void UpdateComponentHandles()
         {
             // Only update handles that are actually used
@@ -433,20 +430,8 @@ namespace ParkingPricing
             m_CarLaneData.Update(this);
         }
 
-
-
         protected override void OnDestroy()
         {
-            // Complete any running jobs
-            if (m_JobInProgress)
-            {
-                m_PreviousJobHandle.Complete();
-                m_JobInProgress = false;
-            }
-
-            // Dispose job arrays
-            DisposeJobArrays();
-
             // Dispose persistent queries - EntityQuery doesn't have IsCreated in this Unity version
             m_DistrictQuery.Dispose();
             m_BuildingQuery.Dispose();
