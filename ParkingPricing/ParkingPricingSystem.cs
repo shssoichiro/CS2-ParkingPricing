@@ -40,9 +40,6 @@ namespace ParkingPricing
         [ReadOnly] private ComponentLookup<Unspawned> m_UnspawnedData;
         [ReadOnly] private ComponentLookup<PrefabRef> m_PrefabRefData;
         [ReadOnly] private ComponentLookup<ObjectGeometryData> m_ObjectGeometryData;
-        [ReadOnly] private ComponentLookup<Lane> m_LaneType;
-        [ReadOnly] private BufferLookup<LaneObject> m_LaneObjectType;
-        [ReadOnly] private BufferLookup<LaneOverlap> m_LaneOverlapType;
         [ReadOnly] private ComponentLookup<Lane> m_LaneData;
         [ReadOnly] private ComponentLookup<Game.Net.CarLane> m_CarLaneData;
 
@@ -52,7 +49,6 @@ namespace ParkingPricing
 
         // Extracted components
         private PolicyManager m_PolicyManager;
-        private UtilizationCalculator m_UtilizationCalculator;
 
         // Job system state
         private JobHandle m_PreviousJobHandle;
@@ -124,9 +120,6 @@ namespace ParkingPricing
             m_UnspawnedData = GetComponentLookup<Unspawned>(true);
             m_PrefabRefData = GetComponentLookup<PrefabRef>(true);
             m_ObjectGeometryData = GetComponentLookup<ObjectGeometryData>(true);
-            m_LaneType = GetComponentLookup<Lane>(true);
-            m_LaneObjectType = GetBufferLookup<LaneObject>(true);
-            m_LaneOverlapType = GetBufferLookup<LaneOverlap>(true);
             m_LaneData = GetComponentLookup<Lane>(true);
             m_CarLaneData = GetComponentLookup<Game.Net.CarLane>(true);
         }
@@ -143,11 +136,6 @@ namespace ParkingPricing
         {
             if (m_ConfigQuery.IsEmptyIgnoreFilter) return;
             InitializePolicyPrefabs();
-
-            // Initialize utilization calculator after game loads and prefabs are ready
-            m_UtilizationCalculator = new UtilizationCalculator(EntityManager,
-                m_SubLanes, m_ParkedCarData, m_UnspawnedData, m_PrefabRefData,
-                m_ObjectGeometryData, m_LaneData, m_CarLaneData);
         }
 
         private void InitializePolicyPrefabs()
@@ -279,7 +267,14 @@ namespace ParkingPricing
                     LaneObjectData = GetBufferLookup<LaneObject>(true),
                     LaneOverlapData = GetBufferLookup<LaneOverlap>(true),
                     LaneData = GetComponentLookup<Lane>(true),
-                    ParkingLaneComponentData = GetComponentLookup<Game.Net.ParkingLane>(true),
+                    PrefabRefData = GetComponentLookup<PrefabRef>(true),
+                    CurveData = GetComponentLookup<Curve>(true),
+                    ParkingLaneDataComponents = GetComponentLookup<ParkingLaneData>(true),
+                    ParkedCarData = GetComponentLookup<ParkedCar>(true),
+                    UnspawnedData = GetComponentLookup<Unspawned>(true),
+                    ObjectGeometryData = GetComponentLookup<ObjectGeometryData>(true),
+                    SubLanes = GetBufferLookup<Game.Net.SubLane>(true),
+                    CarLaneData = GetComponentLookup<Game.Net.CarLane>(true),
                     Results = m_DistrictResults
                 };
 
@@ -300,6 +295,10 @@ namespace ParkingPricing
                     OwnerData = GetComponentLookup<Game.Common.Owner>(true),
                     BuildingData = GetComponentLookup<Game.Buildings.Building>(true),
                     LaneObjectData = GetBufferLookup<LaneObject>(true),
+                    PrefabRefData = GetComponentLookup<PrefabRef>(true),
+                    CurveData = GetComponentLookup<Curve>(true),
+                    ParkingLaneDataComponents = GetComponentLookup<ParkingLaneData>(true),
+                    ParkedCarData = GetComponentLookup<ParkedCar>(true),
                     Results = m_BuildingResults
                 };
 

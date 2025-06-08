@@ -1,6 +1,7 @@
 ## Version 1.0.2
 
 - Avoid including Colossal.Mathematics dll
+- Fix an issue where the utilization of the Multi-Level Parking Building was incorrect
 
 ## Version 1.0.1
 
