@@ -17,9 +17,18 @@ using ParkingLane = Game.Net.ParkingLane;
 using SubLane = Game.Net.SubLane;
 
 namespace ParkingPricing {
+    // Custom ECB system for parking pricing updates
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(ParkingPricingSystem))]
+    public partial class ParkingPricingEntityCommandBufferSystem : EntityCommandBufferSystem {
+        protected override void OnCreate() {
+            base.OnCreate();
+        }
+    }
+
     // System to process policy update commands immediately after ECB playback
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(EndSimulationEntityCommandBufferSystem))]
+    [UpdateAfter(typeof(ParkingPricingEntityCommandBufferSystem))]
     public partial class PolicyUpdateSystem : GameSystemBase {
         private PolicyManager _policyManager;
         private EntityQuery _policyUpdateQuery;
@@ -35,6 +44,9 @@ namespace ParkingPricing {
                 return;
             }
 
+            LogUtil.Debug(
+                $"PolicyUpdateSystem.OnUpdate: Query has {_policyUpdateQuery.CalculateEntityCount()} entities"
+            );
             int appliedUpdates = 0;
             NativeArray<PolicyUpdateCommand> policyUpdateCommands =
                 _policyUpdateQuery.ToComponentDataArray<PolicyUpdateCommand>(Allocator.Temp);
@@ -111,7 +123,7 @@ namespace ParkingPricing {
         private Entity _streetParkingFeePrefab;
 
         // Entity Command Buffer System for immediate updates
-        private EndSimulationEntityCommandBufferSystem _endSimulationECBSystem;
+        private ParkingPricingEntityCommandBufferSystem _parkingPricingECBSystem;
 
         // Extracted components
         private PolicyManager _policyManager;
@@ -128,7 +140,7 @@ namespace ParkingPricing {
             _streetParkingFeePrefab = Entity.Null;
 
             // Initialize ECB system for immediate updates
-            _endSimulationECBSystem = World.GetOrCreateSystemManaged<EndSimulationEntityCommandBufferSystem>();
+            _parkingPricingECBSystem = World.GetOrCreateSystemManaged<ParkingPricingEntityCommandBufferSystem>();
 
             // Initialize extracted components
             _policyManager = new PolicyManager(EntityManager);
@@ -256,7 +268,7 @@ namespace ParkingPricing {
             }
 
             // Get ECB from the system for immediate updates
-            EntityCommandBuffer ecb = _endSimulationECBSystem.CreateCommandBuffer();
+            EntityCommandBuffer ecb = _parkingPricingECBSystem.CreateCommandBuffer();
 
             // Get entities to process
             NativeArray<Entity> districtEntities = enableStreet
@@ -355,7 +367,11 @@ namespace ParkingPricing {
                 combinedJobHandle = applyJobHandle;
 
                 // Register the job with the ECB system for completion and playback
-                _endSimulationECBSystem.AddJobHandleForProducer(combinedJobHandle);
+                _parkingPricingECBSystem.AddJobHandleForProducer(combinedJobHandle);
+
+                LogUtil.Info(
+                    $"Scheduled ECB job to add PolicyUpdateCommand to {districtEntities.Length} districts and {buildingEntities.Length} buildings"
+                );
             }
 
             // Dispose input arrays (they're no longer needed after scheduling)

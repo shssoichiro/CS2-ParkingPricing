@@ -21,6 +21,7 @@ namespace ParkingPricing {
             AssetDatabase.global.LoadSettings(nameof(ParkingPricing), Setting, new ModSettings(this));
 
             updateSystem.UpdateAt<ParkingPricingSystem>(SystemUpdatePhase.GameSimulation);
+            updateSystem.UpdateAt<ParkingPricingEntityCommandBufferSystem>(SystemUpdatePhase.GameSimulation);
             updateSystem.UpdateAt<PolicyUpdateSystem>(SystemUpdatePhase.GameSimulation);
         }
 
