@@ -1,1 +1,3 @@
-- Refactored to avoid lag by using asynchronous jobs for computation
+- Avoid including Colossal.Mathematics dll
+- Fix an issue where the utilization of the Multi-Level Parking Building was incorrect
+- Fix delay where policy updates would not apply until the start of the next calculation cycle

@@ -21,9 +21,6 @@ namespace ParkingPricing {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ParkingPricingSystem))]
     public partial class ParkingPricingEntityCommandBufferSystem : EntityCommandBufferSystem {
-        protected override void OnCreate() {
-            base.OnCreate();
-        }
     }
 
     // System to process policy update commands immediately after ECB playback
@@ -64,15 +61,11 @@ namespace ParkingPricing {
                         // Apply the policy update
                         _policyManager.UpdateOrAddPolicy(entity, command.PolicyPrefab, command.NewPrice);
 
-                        if (command.IsDistrict) {
-                            LogUtil.Info(
-                                $"Updated street parking policy for district {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})"
-                            );
-                        } else {
-                            LogUtil.Info(
-                                $"Updated parking policy for building {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})"
-                            );
-                        }
+                        LogUtil.Info(
+                            command.IsDistrict
+                                ? $"Updated street parking policy for district {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})"
+                                : $"Updated parking policy for building {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})"
+                        );
 
                         appliedUpdates++;
                     } catch (Exception ex) {
