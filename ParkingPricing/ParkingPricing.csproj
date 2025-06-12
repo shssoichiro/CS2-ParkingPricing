@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <TargetFramework>net472</TargetFramework>
+    <TargetFramework>net48</TargetFramework>
     <Configurations>Debug;Release</Configurations>
     <LangVersion>9.0</LangVersion>
 
@@ -10,7 +10,7 @@
     file where mod information which is required for publishing mod on PDX mods are stored-->
     <PublishConfigurationPath>Properties\PublishConfiguration.xml</PublishConfigurationPath>
     <Title>Parking Pricing</Title>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Description>Dynamically adjusts parking lot pricing throughout your city based on demand</Description>
     <Copyright>Copyright © 2025</Copyright>
 

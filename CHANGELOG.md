@@ -1,3 +1,7 @@
+## Version 1.0.3
+
+- Mark as compatible with the new patch. No code changes needed.
+
 ## Version 1.0.2
 
 - Avoid including Colossal.Mathematics dll
