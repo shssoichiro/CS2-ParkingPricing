@@ -1,3 +1,9 @@
+# Changelog
+
+## Version 1.0.4
+
+- Fix a memory leak
+
 ## Version 1.0.3
 
 - Mark as compatible with the new patch. No code changes needed.

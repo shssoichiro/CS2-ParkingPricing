@@ -1,1 +1,1 @@
-- Mark as compatible with the new patch. No code changes needed.
+- Fix a memory leak
