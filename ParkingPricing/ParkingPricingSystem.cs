@@ -274,9 +274,9 @@ namespace ParkingPricing {
 
             // Prepare result arrays
             var districtResults =
-                new NativeArray<DistrictUtilizationResult>(districtEntities.Length, Allocator.TempJob);
+                new NativeArray<DistrictUtilizationResult>(districtEntities.Length, Allocator.Persistent);
             var buildingResults =
-                new NativeArray<BuildingUtilizationResult>(buildingEntities.Length, Allocator.TempJob);
+                new NativeArray<BuildingUtilizationResult>(buildingEntities.Length, Allocator.Persistent);
 
             JobHandle combinedJobHandle = default;
 
