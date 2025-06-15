@@ -6,7 +6,6 @@ using Game.Buildings;
 using Game.Common;
 using Game.Net;
 using Game.Objects;
-using Game.Policies;
 using Game.Prefabs;
 using Game.Vehicles;
 using Unity.Collections;
@@ -85,31 +84,13 @@ namespace ParkingPricing {
 
     // Main system class now focused on coordination and ECS management
     public partial class ParkingPricingSystem : GameSystemBase {
-        // Entity queries - now properly cached
+        // Entity queries
         private EntityQuery _districtQuery;
         private EntityQuery _buildingQuery;
         private EntityQuery _parkingLaneQuery;
         private EntityQuery _garageLaneQuery;
         private EntityQuery _configQuery;
         private EntityQuery _policyPrefabQuery;
-
-        // Component type handles
-        private ComponentTypeHandle<District> _districtType;
-        private ComponentTypeHandle<Building> _buildingType;
-        private ComponentTypeHandle<ParkingLane> _parkingLaneType;
-        private ComponentTypeHandle<GarageLane> _garageLaneType;
-        private ComponentTypeHandle<Owner> _ownerType;
-        private BufferTypeHandle<Policy> _policyType;
-        private EntityStorageInfoLookup _entityLookup;
-
-        // Lookup components
-        [ReadOnly] private BufferLookup<SubLane> _subLanes;
-        private ComponentLookup<ParkedCar> _parkedCarData;
-        [ReadOnly] private ComponentLookup<Unspawned> _unspawnedData;
-        [ReadOnly] private ComponentLookup<PrefabRef> _prefabRefData;
-        [ReadOnly] private ComponentLookup<ObjectGeometryData> _objectGeometryData;
-        [ReadOnly] private ComponentLookup<Lane> _laneData;
-        [ReadOnly] private ComponentLookup<CarLane> _carLaneData;
 
         // Cached policy prefab entities
         private Entity _lotParkingFeePrefab;
@@ -125,8 +106,6 @@ namespace ParkingPricing {
             base.OnCreate();
 
             InitializeQueries();
-            InitializeComponentHandles();
-            InitializeLookupComponents();
 
             // Initialize cached prefab entities
             _lotParkingFeePrefab = Entity.Null;
@@ -153,26 +132,6 @@ namespace ParkingPricing {
 
             _garageLaneQuery = new EntityQueryBuilder(Allocator.Persistent).WithAll<GarageLane>().WithAll<Owner>()
                 .Build(this);
-        }
-
-        private void InitializeComponentHandles() {
-            _districtType = GetComponentTypeHandle<District>(true);
-            _buildingType = GetComponentTypeHandle<Building>(true);
-            _parkingLaneType = GetComponentTypeHandle<ParkingLane>(true);
-            _garageLaneType = GetComponentTypeHandle<GarageLane>(true);
-            _ownerType = GetComponentTypeHandle<Owner>(true);
-            _policyType = GetBufferTypeHandle<Policy>();
-            _entityLookup = GetEntityStorageInfoLookup();
-        }
-
-        private void InitializeLookupComponents() {
-            _subLanes = GetBufferLookup<SubLane>(true);
-            _parkedCarData = GetComponentLookup<ParkedCar>();
-            _unspawnedData = GetComponentLookup<Unspawned>(true);
-            _prefabRefData = GetComponentLookup<PrefabRef>(true);
-            _objectGeometryData = GetComponentLookup<ObjectGeometryData>(true);
-            _laneData = GetComponentLookup<Lane>(true);
-            _carLaneData = GetComponentLookup<CarLane>(true);
         }
 
         public override int GetUpdateInterval(SystemUpdatePhase phase) {
@@ -242,7 +201,6 @@ namespace ParkingPricing {
 
             // Start async update with immediate application via ECB
             try {
-                UpdateComponentHandles();
                 StartAsyncUpdate();
             } catch (Exception ex) {
                 LogUtil.Exception(ex);
@@ -393,26 +351,6 @@ namespace ParkingPricing {
             NativeArray<Entity> result = tempList.ToArray(Allocator.TempJob);
             tempList.Dispose();
             return result;
-        }
-
-        private void UpdateComponentHandles() {
-            // Only update handles that are actually used
-            _districtType.Update(this);
-            _buildingType.Update(this);
-            _parkingLaneType.Update(this);
-            _garageLaneType.Update(this);
-            _ownerType.Update(this);
-            _policyType.Update(this);
-            _entityLookup.Update(this);
-
-            // Update lookup components
-            _subLanes.Update(this);
-            _parkedCarData.Update(this);
-            _unspawnedData.Update(this);
-            _prefabRefData.Update(this);
-            _objectGeometryData.Update(this);
-            _laneData.Update(this);
-            _carLaneData.Update(this);
         }
 
         protected override void OnDestroy() {
