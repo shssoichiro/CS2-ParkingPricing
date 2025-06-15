@@ -46,26 +46,23 @@ namespace ParkingPricing {
 
             // Check all parking lanes to see which belong to this district
             foreach (Entity laneEntity in ParkingLanes) {
-                if (!ParkingLaneData.HasComponent(laneEntity) || !OwnerData.HasComponent(laneEntity)) {
+                if (!ParkingLaneData.TryGetComponent(laneEntity, out ParkingLane parkingLane)
+                    || !OwnerData.TryGetComponent(laneEntity, out Owner owner)) {
                     continue;
                 }
-
-                ParkingLane parkingLane = ParkingLaneData[laneEntity];
 
                 // Skip virtual lanes
                 if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0) {
                     continue;
                 }
 
-                Owner owner = OwnerData[laneEntity];
                 Entity roadEntity = owner.m_Owner;
 
                 // Check if the road has a BorderDistrict component
-                if (!BorderDistrictData.HasComponent(roadEntity)) {
+                if (!BorderDistrictData.TryGetComponent(roadEntity, out BorderDistrict borderDistrict)) {
                     continue;
                 }
 
-                BorderDistrict borderDistrict = BorderDistrictData[roadEntity];
                 bool leftMatch = borderDistrict.m_Left == districtEntity;
                 bool rightMatch = borderDistrict.m_Right == districtEntity;
 
@@ -74,20 +71,17 @@ namespace ParkingPricing {
                     continue;
                 }
 
-                if (!LaneObjectData.HasBuffer(laneEntity) || !LaneOverlapData.HasBuffer(laneEntity)
-                                                          || !LaneData.HasComponent(laneEntity)) {
+                if (!LaneObjectData.TryGetBuffer(laneEntity, out DynamicBuffer<LaneObject> laneObjects)
+                    || !LaneOverlapData.TryGetBuffer(laneEntity, out DynamicBuffer<LaneOverlap> laneOverlaps)
+                    || !LaneData.TryGetComponent(laneEntity, out Lane laneData)) {
                     continue;
                 }
 
-                // Get lane data directly from the lane entity
-                DynamicBuffer<LaneOverlap> laneOverlaps = LaneOverlapData[laneEntity];
-                Lane laneData = LaneData[laneEntity];
-                Bounds1 blockedRange = GetBlockedRange(owner, laneData);
-
                 int laneCapacity = 0;
                 int laneOccupied = 0;
+                Bounds1 blockedRange = GetBlockedRange(owner, laneData);
                 GetStreetParkingLaneCapacity(
-                    laneEntity, parkingLane, laneOverlaps, blockedRange, ref laneCapacity, ref laneOccupied
+                    laneEntity, parkingLane, laneObjects, laneOverlaps, blockedRange, ref laneCapacity, ref laneOccupied
                 );
 
                 // Determine weight based on district ownership
@@ -102,14 +96,13 @@ namespace ParkingPricing {
         }
 
         private void GetStreetParkingLaneCapacity(
-            Entity subLane, ParkingLane parkingLane, DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange,
-            ref int slotCapacity, ref int parkedCars
+            Entity subLane, ParkingLane parkingLane, DynamicBuffer<LaneObject> laneObjects,
+            DynamicBuffer<LaneOverlap> laneOverlaps, Bounds1 blockedRange, ref int slotCapacity, ref int parkedCars
         ) {
             // Get parking slot count using game's method
             Entity prefab = PrefabRefData[subLane].m_Prefab;
             Curve curve = CurveData[subLane];
             ParkingLaneData parkingLaneData = ParkingLaneDataComponents[prefab];
-            DynamicBuffer<LaneObject> laneObjects = LaneObjectData[subLane];
 
             if (parkingLaneData.m_SlotInterval != 0f) {
                 int parkingSlotCount = NetUtils.GetParkingSlotCount(curve, parkingLane, parkingLaneData);
@@ -281,20 +274,18 @@ namespace ParkingPricing {
 
         private Bounds1 GetBlockedRange(Owner owner, Lane laneData) {
             var result = new Bounds1(2f, -1f);
-            if (!SubLanes.HasBuffer(owner.m_Owner)) {
+            if (!SubLanes.TryGetBuffer(owner.m_Owner, out DynamicBuffer<SubLane> dynamicBuffer)) {
                 return result;
             }
 
-            DynamicBuffer<SubLane> dynamicBuffer = SubLanes[owner.m_Owner];
             for (int i = 0; i < dynamicBuffer.Length; i++) {
                 Entity subLane = dynamicBuffer[i].m_SubLane;
                 Lane lane = LaneData[subLane];
                 if (!laneData.m_StartNode.EqualsIgnoreCurvePos(lane.m_MiddleNode)
-                    || !CarLaneData.HasComponent(subLane)) {
+                    || !CarLaneData.TryGetComponent(subLane, out CarLane carLane)) {
                     continue;
                 }
 
-                CarLane carLane = CarLaneData[subLane];
                 if (carLane.m_BlockageEnd < carLane.m_BlockageStart) {
                     continue;
                 }
@@ -344,11 +335,9 @@ namespace ParkingPricing {
                     continue;
                 }
 
-                if (!ParkingLaneData.HasComponent(laneEntity)) {
+                if (!ParkingLaneData.TryGetComponent(laneEntity, out ParkingLane parkingLane)) {
                     continue;
                 }
-
-                ParkingLane parkingLane = ParkingLaneData[laneEntity];
 
                 // Skip virtual lanes
                 if ((parkingLane.m_Flags & ParkingLaneFlags.VirtualLane) != 0) {
@@ -364,11 +353,10 @@ namespace ParkingPricing {
                     continue;
                 }
 
-                if (!GarageLaneData.HasComponent(laneEntity)) {
+                if (!GarageLaneData.TryGetComponent(laneEntity, out GarageLane garageLane)) {
                     continue;
                 }
 
-                GarageLane garageLane = GarageLaneData[laneEntity];
                 slotCapacity += garageLane.m_VehicleCapacity;
                 parkedCars += garageLane.m_VehicleCount;
             }
@@ -392,12 +380,11 @@ namespace ParkingPricing {
                 slotCapacity += parkingSlotCount;
             }
 
-            if (!LaneObjectData.HasBuffer(subLane)) {
+            if (!LaneObjectData.TryGetBuffer(subLane, out DynamicBuffer<LaneObject> laneObjects)) {
                 return;
             }
 
             // Count parked cars in this lane
-            DynamicBuffer<LaneObject> laneObjects = LaneObjectData[subLane];
             for (int j = 0; j < laneObjects.Length; j++) {
                 if (ParkedCarData.HasComponent(laneObjects[j].m_LaneObject)) {
                     parkedCars++;
@@ -409,8 +396,8 @@ namespace ParkingPricing {
             Entity currentEntity = laneEntity;
             int depth = 0;
 
-            while (depth < ParkingPricingConstants.MaxOwnershipDepth && OwnerData.HasComponent(currentEntity)) {
-                Owner owner = OwnerData[currentEntity];
+            while (depth < ParkingPricingConstants.MaxOwnershipDepth
+                   && OwnerData.TryGetComponent(currentEntity, out Owner owner)) {
                 currentEntity = owner.m_Owner;
 
                 // Check if current entity is a building

@@ -1,4 +1,5 @@
 using System;
+using Colossal.Entities;
 using Colossal.Serialization.Entities;
 using Game;
 using Game.Areas;
@@ -160,18 +161,14 @@ namespace ParkingPricing {
             NativeArray<Entity> policyPrefabs = _policyPrefabQuery.ToEntityArray(Allocator.Temp);
             try {
                 foreach (Entity prefabEntity in policyPrefabs) {
-                    if (EntityManager.HasComponent<BuildingOptionData>(prefabEntity)) {
-                        BuildingOptionData buildingOptionData =
-                            EntityManager.GetComponentData<BuildingOptionData>(prefabEntity);
+                    if (EntityManager.TryGetComponent(prefabEntity, out BuildingOptionData buildingOptionData)) {
                         if (!BuildingUtils.HasOption(buildingOptionData, BuildingOption.PaidParking)) {
                             continue;
                         }
 
                         _lotParkingFeePrefab = prefabEntity;
                         LogUtil.Info($"Found Lot Parking Fee prefab: {prefabEntity.Index}");
-                    } else if (EntityManager.HasComponent<DistrictOptionData>(prefabEntity)) {
-                        DistrictOptionData districtOptionData =
-                            EntityManager.GetComponentData<DistrictOptionData>(prefabEntity);
+                    } else if (EntityManager.TryGetComponent(prefabEntity, out DistrictOptionData districtOptionData)) {
                         if (!AreaUtils.HasOption(districtOptionData, DistrictOption.PaidParking)) {
                             continue;
                         }
@@ -341,7 +338,7 @@ namespace ParkingPricing {
 
                 foreach (Entity buildingEntity in buildingEntities) {
                     // Only include buildings that can have parking fee policy
-                    if (_policyManager.TryGetPolicy(buildingEntity, _lotParkingFeePrefab, out _)) {
+                    if (_policyManager.HasPolicy(buildingEntity, _lotParkingFeePrefab)) {
                         tempList.Add(buildingEntity);
                     }
                 }

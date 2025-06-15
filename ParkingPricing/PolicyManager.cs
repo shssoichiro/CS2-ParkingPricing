@@ -1,3 +1,4 @@
+using Colossal.Entities;
 using Game.Policies;
 using Unity.Entities;
 
@@ -10,30 +11,31 @@ namespace ParkingPricing {
             _entityManager = entityManager;
         }
 
-        public bool TryGetPolicy(Entity entity, Entity policyType, out Policy policy) {
-            if (_entityManager.Exists(entity) && _entityManager.HasBuffer<Policy>(entity)) {
-                DynamicBuffer<Policy> buffer = _entityManager.GetBuffer<Policy>(entity);
-                for (int index = 0; index < buffer.Length; index++) {
-                    if (buffer[index].m_Policy != policyType) {
-                        continue;
-                    }
-
-                    policy = buffer[index];
-                    return true;
-                }
+        public bool HasPolicy(Entity entity, Entity policyType) {
+            if (!_entityManager.Exists(entity)
+                || !_entityManager.TryGetBuffer(entity, true, out DynamicBuffer<Policy> buffer)) {
+                return false;
             }
 
-            policy = default;
+            for (int index = 0; index < buffer.Length; index++) {
+                if (buffer[index].m_Policy != policyType) {
+                    continue;
+                }
+
+                return true;
+            }
+
             return false;
         }
 
         public void UpdateOrAddPolicy(Entity entity, Entity policyType, int newPrice) {
-            if (!_entityManager.Exists(entity) || !_entityManager.HasBuffer<Policy>(entity)) {
+            if (!_entityManager.Exists(entity) || !_entityManager.TryGetBuffer(
+                    entity, false, out DynamicBuffer<Policy> buffer
+                )) {
                 LogUtil.Warn($"Entity {entity.Index} does not exist or lacks Policy buffer");
                 return;
             }
 
-            DynamicBuffer<Policy> buffer = _entityManager.GetBuffer<Policy>(entity);
             for (int index = 0; index < buffer.Length; index++) {
                 if (buffer[index].m_Policy != policyType) {
                     continue;
