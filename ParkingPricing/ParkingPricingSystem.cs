@@ -58,15 +58,11 @@ namespace ParkingPricing {
             _policyPrefabQuery = GetEntityQuery(ComponentType.ReadOnly<PrefabData>());
 
             // Cache entity queries to avoid recreating them every frame
-            _districtQuery = new EntityQueryBuilder(Allocator.Persistent).WithAll<District>().Build(this);
-
-            _buildingQuery = new EntityQueryBuilder(Allocator.Persistent).WithAll<Building>().Build(this);
-
-            _parkingLaneQuery = new EntityQueryBuilder(Allocator.Persistent).WithAll<ParkingLane>().WithAll<Owner>()
-                .WithAll<LaneObject>().WithAll<LaneOverlap>().WithAll<Lane>().Build(this);
-
-            _garageLaneQuery = new EntityQueryBuilder(Allocator.Persistent).WithAll<GarageLane>().WithAll<Owner>()
-                .Build(this);
+            _districtQuery = SystemAPI.QueryBuilder().WithAll<District>().Build();
+            _buildingQuery = SystemAPI.QueryBuilder().WithAll<Building>().Build();
+            _parkingLaneQuery = SystemAPI.QueryBuilder().WithAll<ParkingLane>().WithAll<Owner>().WithAll<LaneObject>()
+                .WithAll<LaneOverlap>().WithAll<Lane>().Build();
+            _garageLaneQuery = SystemAPI.QueryBuilder().WithAll<GarageLane>().WithAll<Owner>().Build();
         }
 
         public override int GetUpdateInterval(SystemUpdatePhase phase) {
@@ -174,20 +170,20 @@ namespace ParkingPricing {
                 var districtJob = new CalculateDistrictUtilizationJob {
                     DistrictEntities = districtEntities,
                     ParkingLanes = parkingLanes,
-                    ParkingLaneData = GetComponentLookup<ParkingLane>(true),
-                    OwnerData = GetComponentLookup<Owner>(true),
-                    BorderDistrictData = GetComponentLookup<BorderDistrict>(true),
-                    LaneObjectData = GetBufferLookup<LaneObject>(true),
-                    LaneOverlapData = GetBufferLookup<LaneOverlap>(true),
-                    LaneData = GetComponentLookup<Lane>(true),
-                    PrefabRefData = GetComponentLookup<PrefabRef>(true),
-                    CurveData = GetComponentLookup<Curve>(true),
-                    ParkingLaneDataComponents = GetComponentLookup<ParkingLaneData>(true),
-                    ParkedCarData = GetComponentLookup<ParkedCar>(true),
-                    UnspawnedData = GetComponentLookup<Unspawned>(true),
-                    ObjectGeometryData = GetComponentLookup<ObjectGeometryData>(true),
-                    SubLanes = GetBufferLookup<SubLane>(true),
-                    CarLaneData = GetComponentLookup<CarLane>(true),
+                    ParkingLaneData = SystemAPI.GetComponentLookup<ParkingLane>(true),
+                    OwnerData = SystemAPI.GetComponentLookup<Owner>(true),
+                    BorderDistrictData = SystemAPI.GetComponentLookup<BorderDistrict>(true),
+                    LaneObjectData = SystemAPI.GetBufferLookup<LaneObject>(true),
+                    LaneOverlapData = SystemAPI.GetBufferLookup<LaneOverlap>(true),
+                    LaneData = SystemAPI.GetComponentLookup<Lane>(true),
+                    PrefabRefData = SystemAPI.GetComponentLookup<PrefabRef>(true),
+                    CurveData = SystemAPI.GetComponentLookup<Curve>(true),
+                    ParkingLaneDataComponents = SystemAPI.GetComponentLookup<ParkingLaneData>(true),
+                    ParkedCarData = SystemAPI.GetComponentLookup<ParkedCar>(true),
+                    UnspawnedData = SystemAPI.GetComponentLookup<Unspawned>(true),
+                    ObjectGeometryData = SystemAPI.GetComponentLookup<ObjectGeometryData>(true),
+                    SubLanes = SystemAPI.GetBufferLookup<SubLane>(true),
+                    CarLaneData = SystemAPI.GetComponentLookup<CarLane>(true),
                     Results = districtResults
                 };
 
@@ -201,15 +197,15 @@ namespace ParkingPricing {
                     BuildingEntities = buildingEntities,
                     ParkingLanes = parkingLanes,
                     GarageLanes = garageLanes,
-                    ParkingLaneData = GetComponentLookup<ParkingLane>(true),
-                    GarageLaneData = GetComponentLookup<GarageLane>(true),
-                    OwnerData = GetComponentLookup<Owner>(true),
-                    BuildingData = GetComponentLookup<Building>(true),
-                    LaneObjectData = GetBufferLookup<LaneObject>(true),
-                    PrefabRefData = GetComponentLookup<PrefabRef>(true),
-                    CurveData = GetComponentLookup<Curve>(true),
-                    ParkingLaneDataComponents = GetComponentLookup<ParkingLaneData>(true),
-                    ParkedCarData = GetComponentLookup<ParkedCar>(true),
+                    ParkingLaneData = SystemAPI.GetComponentLookup<ParkingLane>(true),
+                    GarageLaneData = SystemAPI.GetComponentLookup<GarageLane>(true),
+                    OwnerData = SystemAPI.GetComponentLookup<Owner>(true),
+                    BuildingData = SystemAPI.GetComponentLookup<Building>(true),
+                    LaneObjectData = SystemAPI.GetBufferLookup<LaneObject>(true),
+                    PrefabRefData = SystemAPI.GetComponentLookup<PrefabRef>(true),
+                    CurveData = SystemAPI.GetComponentLookup<Curve>(true),
+                    ParkingLaneDataComponents = SystemAPI.GetComponentLookup<ParkingLaneData>(true),
+                    ParkedCarData = SystemAPI.GetComponentLookup<ParkedCar>(true),
                     Results = buildingResults
                 };
 
