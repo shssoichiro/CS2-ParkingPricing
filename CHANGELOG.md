@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 1.0.5
+
+- Internal refactors to improve memory use and stability
+
 ## Version 1.0.4
 
 - Fix a memory leak

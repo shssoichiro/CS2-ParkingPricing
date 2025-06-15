@@ -1,4 +1,4 @@
-﻿using Game.Buildings;
+using Game.Buildings;
 using Game.Common;
 using Game.Net;
 using Game.Prefabs;
@@ -13,7 +13,7 @@ namespace ParkingPricing {
     // Job for calculating building utilization in parallel
     [BurstCompile]
     public struct CalculateBuildingUtilizationJob : IJobParallelFor {
-        [ReadOnly] public NativeArray<Entity> BuildingEntities;
+        [ReadOnly] public NativeList<Entity> BuildingEntities;
         [ReadOnly] public NativeArray<Entity> ParkingLanes;
         [ReadOnly] public NativeArray<Entity> GarageLanes;
         [ReadOnly] public ComponentLookup<ParkingLane> ParkingLaneData;

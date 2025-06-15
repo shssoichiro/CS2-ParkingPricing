@@ -1,1 +1,1 @@
-- Fix a memory leak
+- Internal refactors to improve memory use and stability
