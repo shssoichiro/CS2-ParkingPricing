@@ -31,6 +31,16 @@ namespace ParkingPricing {
         private Entity _lotParkingFeePrefab;
         private Entity _streetParkingFeePrefab;
 
+        // Entity result arrays for reuse
+        private NativeArray<Entity> _districtEntities = new(0, Allocator.Persistent);
+        private NativeList<Entity> _buildingEntities = new(Allocator.Persistent);
+        private NativeArray<Entity> _parkingLanes = new(0, Allocator.Persistent);
+        private NativeArray<Entity> _garageLanes = new(0, Allocator.Persistent);
+
+        // Utilization result lists for reuse
+        private readonly NativeList<DistrictUtilizationResult> _districtResults = new(Allocator.Persistent);
+        private readonly NativeList<BuildingUtilizationResult> _buildingResults = new(Allocator.Persistent);
+
         // Entity Command Buffer System for immediate updates
         private ParkingPricingEntityCommandBufferSystem _parkingPricingECBSystem;
 
@@ -145,31 +155,43 @@ namespace ParkingPricing {
                 return;
             }
 
+            if (_districtResults.Length > 0 || _buildingResults.Length > 0) {
+                // Previous job runs haven't finished yet, this is unlikely
+                // but might happen on a large city with a slow CPU.
+                return;
+            }
+
             // Get ECB from the system for immediate updates
             EntityCommandBuffer ecb = _parkingPricingECBSystem.CreateCommandBuffer();
 
-            // Get entities to process
-            NativeArray<Entity> districtEntities = enableStreet
-                ? _districtQuery.ToEntityArray(Allocator.TempJob)
-                : new NativeArray<Entity>(0, Allocator.TempJob);
-            NativeArray<Entity> buildingEntities =
-                enableLot ? GetBuildingsWithParkingPolicy() : new NativeArray<Entity>(0, Allocator.TempJob);
-            NativeArray<Entity> parkingLanes = _parkingLaneQuery.ToEntityArray(Allocator.TempJob);
-            NativeArray<Entity> garageLanes = _garageLaneQuery.ToEntityArray(Allocator.TempJob);
+            // Ensure we clean up from the previous run
+            _districtEntities.Dispose();
+            _buildingEntities.Dispose();
+            _parkingLanes.Dispose();
+            _garageLanes.Dispose();
 
-            // Prepare result arrays
-            var districtResults =
-                new NativeArray<DistrictUtilizationResult>(districtEntities.Length, Allocator.Persistent);
-            var buildingResults =
-                new NativeArray<BuildingUtilizationResult>(buildingEntities.Length, Allocator.Persistent);
+            // Get entities to process
+            _parkingLanes = _parkingLaneQuery.ToEntityArray(Allocator.Persistent);
+            if (enableStreet) {
+                _districtEntities = _districtQuery.ToEntityArray(Allocator.Persistent);
+            }
+
+            if (enableLot) {
+                _buildingEntities = GetBuildingsWithParkingPolicy();
+                _garageLanes = _garageLaneQuery.ToEntityArray(Allocator.Persistent);
+            }
+
+            if (_districtEntities.Length == 0 && _buildingEntities.Length == 0) {
+                return;
+            }
 
             JobHandle combinedJobHandle = default;
 
             // Schedule district utilization job
-            if (enableStreet && districtEntities.Length > 0) {
+            if (enableStreet && _districtEntities.Length > 0) {
                 var districtJob = new CalculateDistrictUtilizationJob {
-                    DistrictEntities = districtEntities,
-                    ParkingLanes = parkingLanes,
+                    DistrictEntities = _districtEntities,
+                    ParkingLanes = _parkingLanes,
                     ParkingLaneData = SystemAPI.GetComponentLookup<ParkingLane>(true),
                     OwnerData = SystemAPI.GetComponentLookup<Owner>(true),
                     BorderDistrictData = SystemAPI.GetComponentLookup<BorderDistrict>(true),
@@ -184,19 +206,19 @@ namespace ParkingPricing {
                     ObjectGeometryData = SystemAPI.GetComponentLookup<ObjectGeometryData>(true),
                     SubLanes = SystemAPI.GetBufferLookup<SubLane>(true),
                     CarLaneData = SystemAPI.GetComponentLookup<CarLane>(true),
-                    Results = districtResults
+                    Results = _districtResults
                 };
 
-                JobHandle districtJobHandle = districtJob.Schedule(districtEntities.Length, 1);
+                JobHandle districtJobHandle = districtJob.Schedule(_districtEntities.Length, 1);
                 combinedJobHandle = JobHandle.CombineDependencies(combinedJobHandle, districtJobHandle);
             }
 
             // Schedule building utilization job
-            if (enableLot && buildingEntities.Length > 0) {
+            if (enableLot && _buildingEntities.Length > 0) {
                 var buildingJob = new CalculateBuildingUtilizationJob {
-                    BuildingEntities = buildingEntities,
-                    ParkingLanes = parkingLanes,
-                    GarageLanes = garageLanes,
+                    BuildingEntities = _buildingEntities,
+                    ParkingLanes = _parkingLanes,
+                    GarageLanes = _garageLanes,
                     ParkingLaneData = SystemAPI.GetComponentLookup<ParkingLane>(true),
                     GarageLaneData = SystemAPI.GetComponentLookup<GarageLane>(true),
                     OwnerData = SystemAPI.GetComponentLookup<Owner>(true),
@@ -206,61 +228,53 @@ namespace ParkingPricing {
                     CurveData = SystemAPI.GetComponentLookup<Curve>(true),
                     ParkingLaneDataComponents = SystemAPI.GetComponentLookup<ParkingLaneData>(true),
                     ParkedCarData = SystemAPI.GetComponentLookup<ParkedCar>(true),
-                    Results = buildingResults
+                    Results = _buildingResults
                 };
 
-                JobHandle buildingJobHandle = buildingJob.Schedule(buildingEntities.Length, 1);
+                JobHandle buildingJobHandle = buildingJob.Schedule(_buildingEntities.Length, 1);
                 combinedJobHandle = JobHandle.CombineDependencies(combinedJobHandle, buildingJobHandle);
             }
 
             // Schedule immediate pricing application job with ECB
-            if (districtEntities.Length > 0 || buildingEntities.Length > 0) {
-                var applyPricingJob = new ApplyPricingWithECBJob {
-                    DistrictResults = districtResults,
-                    BuildingResults = buildingResults,
-                    BaseStreetPrice = settings.StandardPriceStreet,
-                    MaxStreetPrice =
-                        PricingCalculator.CalculateMaxPrice(
-                            settings.StandardPriceStreet, settings.MaxPriceIncreaseStreet / 100.0
-                        ),
-                    MinStreetPrice =
-                        PricingCalculator.CalculateMinPrice(
-                            settings.StandardPriceStreet, settings.MaxPriceDiscountStreet / 100.0
-                        ),
-                    BaseLotPrice = settings.StandardPriceLot,
-                    MaxLotPrice =
-                        PricingCalculator.CalculateMaxPrice(
-                            settings.StandardPriceLot, settings.MaxPriceIncreaseLot / 100.0
-                        ),
-                    MinLotPrice =
-                        PricingCalculator.CalculateMinPrice(
-                            settings.StandardPriceLot, settings.MaxPriceDiscountLot / 100.0
-                        ),
-                    StreetParkingFeePrefab = _streetParkingFeePrefab,
-                    LotParkingFeePrefab = _lotParkingFeePrefab,
-                    EntityCommandBuffer = ecb
-                };
+            var applyPricingJob = new ApplyPricingWithECBJob {
+                DistrictResults = _districtResults,
+                BuildingResults = _buildingResults,
+                BaseStreetPrice = settings.StandardPriceStreet,
+                MaxStreetPrice =
+                    PricingCalculator.CalculateMaxPrice(
+                        settings.StandardPriceStreet, settings.MaxPriceIncreaseStreet / 100.0
+                    ),
+                MinStreetPrice =
+                    PricingCalculator.CalculateMinPrice(
+                        settings.StandardPriceStreet, settings.MaxPriceDiscountStreet / 100.0
+                    ),
+                BaseLotPrice = settings.StandardPriceLot,
+                MaxLotPrice =
+                    PricingCalculator.CalculateMaxPrice(
+                        settings.StandardPriceLot, settings.MaxPriceIncreaseLot / 100.0
+                    ),
+                MinLotPrice =
+                    PricingCalculator.CalculateMinPrice(
+                        settings.StandardPriceLot, settings.MaxPriceDiscountLot / 100.0
+                    ),
+                StreetParkingFeePrefab = _streetParkingFeePrefab,
+                LotParkingFeePrefab = _lotParkingFeePrefab,
+                EntityCommandBuffer = ecb
+            };
 
-                JobHandle applyJobHandle = applyPricingJob.Schedule(combinedJobHandle);
-                combinedJobHandle = applyJobHandle;
+            JobHandle applyJobHandle = applyPricingJob.Schedule(combinedJobHandle);
+            combinedJobHandle = applyJobHandle;
 
-                // Register the job with the ECB system for completion and playback
-                _parkingPricingECBSystem.AddJobHandleForProducer(combinedJobHandle);
+            // Register the job with the ECB system for completion and playback
+            _parkingPricingECBSystem.AddJobHandleForProducer(combinedJobHandle);
 
-                LogUtil.Info(
-                    $"Scheduled ECB job to add PolicyUpdateCommand to {districtEntities.Length} districts and {buildingEntities.Length} buildings"
-                );
-            }
-
-            // Dispose input arrays (they're no longer needed after scheduling)
-            districtEntities.Dispose();
-            buildingEntities.Dispose();
-            parkingLanes.Dispose();
-            garageLanes.Dispose();
+            LogUtil.Info(
+                $"Scheduled ECB job to add PolicyUpdateCommand to {_districtEntities.Length} districts and {_buildingEntities.Length} buildings"
+            );
         }
 
-        private NativeArray<Entity> GetBuildingsWithParkingPolicy() {
-            var tempList = new NativeList<Entity>(Allocator.Temp);
+        private NativeList<Entity> GetBuildingsWithParkingPolicy() {
+            var result = new NativeList<Entity>(Allocator.Temp);
             NativeArray<ArchetypeChunk> buildingChunks = _buildingQuery.ToArchetypeChunkArray(Allocator.Temp);
 
             foreach (ArchetypeChunk chunk in buildingChunks) {
@@ -269,14 +283,12 @@ namespace ParkingPricing {
                 foreach (Entity buildingEntity in buildingEntities) {
                     // Only include buildings that can have parking fee policy
                     if (_policyManager.HasPolicy(buildingEntity, _lotParkingFeePrefab)) {
-                        tempList.Add(buildingEntity);
+                        result.Add(buildingEntity);
                     }
                 }
             }
 
             buildingChunks.Dispose();
-            NativeArray<Entity> result = tempList.ToArray(Allocator.TempJob);
-            tempList.Dispose();
             return result;
         }
 

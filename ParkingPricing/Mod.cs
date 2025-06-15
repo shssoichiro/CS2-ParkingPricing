@@ -8,6 +8,9 @@ namespace ParkingPricing {
         public static ModSettings Setting;
 
         public void OnLoad(UpdateSystem updateSystem) {
+            // For debugging memory leaks. Do not uncomment in production.
+            // Unity.Collections.NativeLeakDetection.Mode = Unity.Collections.NativeLeakDetectionMode.EnabledWithStackTrace;
+
             LogUtil.Info(nameof(OnLoad));
 
             if (GameManager.instance.modManager.TryGetExecutableAsset(this, out ExecutableAsset asset)) {
