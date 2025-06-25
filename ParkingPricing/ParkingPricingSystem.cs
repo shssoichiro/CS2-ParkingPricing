@@ -63,6 +63,25 @@ namespace ParkingPricing {
             _policyManager = new PolicyManager(EntityManager);
         }
 
+        protected override void OnUpdate() {
+            if (Mod.Setting == null) {
+                LogUtil.Warn("Mod settings not initialized, skipping update");
+                return;
+            }
+
+            StartAsyncUpdate();
+        }
+
+        protected override void OnDestroy() {
+            // Dispose persistent queries - EntityQuery doesn't have IsCreated in this Unity version
+            _districtQuery.Dispose();
+            _buildingQuery.Dispose();
+            _parkingLaneQuery.Dispose();
+            _garageLaneQuery.Dispose();
+
+            base.OnDestroy();
+        }
+
         private void InitializeQueries() {
             _configQuery = GetEntityQuery(ComponentType.ReadOnly<UITransportConfigurationData>());
             _policyPrefabQuery = GetEntityQuery(ComponentType.ReadOnly<PrefabData>());
@@ -130,20 +149,6 @@ namespace ParkingPricing {
             }
         }
 
-        protected override void OnUpdate() {
-            if (Mod.Setting == null) {
-                LogUtil.Warn("Mod settings not initialized, skipping update");
-                return;
-            }
-
-            // Start async update with immediate application via ECB
-            try {
-                StartAsyncUpdate();
-            } catch (Exception ex) {
-                LogUtil.Exception(ex);
-            }
-        }
-
         private void StartAsyncUpdate() {
             LogUtil.Info("Starting async parking pricing update");
 
@@ -166,7 +171,7 @@ namespace ParkingPricing {
 
             // Ensure we clean up from the previous run
             _districtEntities.Dispose();
-            _buildingEntities.Dispose();
+            _buildingEntities.Clear();
             _parkingLanes.Dispose();
             _garageLanes.Dispose();
 
@@ -290,16 +295,6 @@ namespace ParkingPricing {
 
             buildingChunks.Dispose();
             return result;
-        }
-
-        protected override void OnDestroy() {
-            // Dispose persistent queries - EntityQuery doesn't have IsCreated in this Unity version
-            _districtQuery.Dispose();
-            _buildingQuery.Dispose();
-            _parkingLaneQuery.Dispose();
-            _garageLaneQuery.Dispose();
-
-            base.OnDestroy();
         }
     }
 }

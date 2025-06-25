@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 1.0.6
+
+- Potential fix for an error that was occurring for several users
+
 ## Version 1.0.5
 
 - Internal refactors to improve memory use and stability
