@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 1.0.7
+
+- Avoid spamming logs to the console
+
 ## Version 1.0.6
 
 - Potential fix for an error that was occurring for several users

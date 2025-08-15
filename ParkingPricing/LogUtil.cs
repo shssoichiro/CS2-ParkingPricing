@@ -35,9 +35,11 @@ namespace ParkingPricing {
         public static void Info(string message) {
             _log.Info(message);
 
-            // Info messages are not written to the BepInEx console by the Colossal logger, so write the message explicitly.
-            // Include the mod assembly name and message level to make info messages appear similar to other messages.
-            Console.WriteLine($"[{ModAssemblyInfo.Name}] [INFO]  {message}");
+            if (_printDebug) {
+                // Info messages are not written to the BepInEx console by the Colossal logger, so write the message explicitly.
+                // Include the mod assembly name and message level to make info messages appear similar to other messages.
+                Console.WriteLine($"[{ModAssemblyInfo.Name}] [INFO]  {message}");
+            }
         }
 
         /// <summary>
