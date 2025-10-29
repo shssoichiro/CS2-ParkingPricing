@@ -10,7 +10,7 @@
     file where mod information which is required for publishing mod on PDX mods are stored-->
     <PublishConfigurationPath>Properties\PublishConfiguration.xml</PublishConfigurationPath>
     <Title>Parking Pricing</Title>
-    <Version>1.0.7</Version>
+    <Version>1.1.0</Version>
     <Description>Dynamically adjusts parking lot pricing throughout your city based on demand</Description>
     <Copyright>Copyright © 2025</Copyright>
 

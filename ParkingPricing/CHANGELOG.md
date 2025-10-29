@@ -1,1 +1,1 @@
-- Avoid spamming logs to the console
+- Update for Bridges and Ports DLC
