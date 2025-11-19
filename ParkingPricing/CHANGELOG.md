@@ -1,1 +1,1 @@
-- Update for Bridges and Ports DLC
+- Just remove ALL the logs

@@ -10,7 +10,7 @@ namespace ParkingPricing
     public class ModAssemblyInfo
     {
         public const string Name        = "ParkingPricing";
-        public const string Version     = "1.1.0";
+        public const string Version     = "1.1.1";
         public const string Title       = "Parking Pricing";
         public const string Description = "Dynamically adjusts parking lot pricing throughout your city based on demand";
     }

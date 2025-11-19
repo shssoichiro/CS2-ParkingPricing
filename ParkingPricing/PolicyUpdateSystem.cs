@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Game;
 using Unity.Collections;
 using Unity.Entities;
@@ -22,9 +22,6 @@ namespace ParkingPricing {
                 return;
             }
 
-            LogUtil.Debug(
-                $"PolicyUpdateSystem.OnUpdate: Query has {_policyUpdateQuery.CalculateEntityCount()} entities"
-            );
             int appliedUpdates = 0;
             NativeArray<PolicyUpdateCommand> policyUpdateCommands =
                 _policyUpdateQuery.ToComponentDataArray<PolicyUpdateCommand>(Allocator.Temp);
@@ -42,20 +39,10 @@ namespace ParkingPricing {
                         // Apply the policy update
                         _policyManager.UpdateOrAddPolicy(entity, command.PolicyPrefab, command.NewPrice);
 
-                        LogUtil.Info(
-                            command.IsDistrict
-                                ? $"Updated street parking policy for district {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})"
-                                : $"Updated parking policy for building {entity.Index}: ${command.NewPrice} (Utilization: {command.Utilization:P2})"
-                        );
-
                         appliedUpdates++;
                     } catch (Exception ex) {
                         LogUtil.Error($"Failed to apply pricing update to entity {entity.Index}: {ex.Message}");
                     }
-                }
-
-                if (appliedUpdates > 0) {
-                    LogUtil.Info($"Applied {appliedUpdates} pricing updates immediately via ECB");
                 }
             } finally {
                 policyUpdateCommands.Dispose();

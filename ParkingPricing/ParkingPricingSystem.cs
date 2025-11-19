@@ -126,14 +126,12 @@ namespace ParkingPricing {
                         }
 
                         _lotParkingFeePrefab = prefabEntity;
-                        LogUtil.Info($"Found Lot Parking Fee prefab: {prefabEntity.Index}");
                     } else if (EntityManager.TryGetComponent(prefabEntity, out DistrictOptionData districtOptionData)) {
                         if (!AreaUtils.HasOption(districtOptionData, DistrictOption.PaidParking)) {
                             continue;
                         }
 
                         _streetParkingFeePrefab = prefabEntity;
-                        LogUtil.Info($"Found Street Parking Fee prefab: {prefabEntity.Index}");
                     }
                 }
 
@@ -150,8 +148,6 @@ namespace ParkingPricing {
         }
 
         private void StartAsyncUpdate() {
-            LogUtil.Info("Starting async parking pricing update");
-
             ModSettings settings = Mod.Setting;
             bool enableStreet = settings.EnableForStreet;
             bool enableLot = settings.EnableForLot;
@@ -272,10 +268,6 @@ namespace ParkingPricing {
 
             // Register the job with the ECB system for completion and playback
             _parkingPricingECBSystem.AddJobHandleForProducer(combinedJobHandle);
-
-            LogUtil.Info(
-                $"Scheduled ECB job to add PolicyUpdateCommand to {_districtEntities.Length} districts and {_buildingEntities.Length} buildings"
-            );
         }
 
         private NativeList<Entity> GetBuildingsWithParkingPolicy() {
